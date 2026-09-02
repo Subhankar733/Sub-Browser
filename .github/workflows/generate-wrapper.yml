@@ -25,6 +25,9 @@ jobs:
         with:
           gradle-version: '9.6.0'
 
+         - name: Ensure app module directory
+           run: mkdir -p app
+
       - name: Generate Gradle Wrapper
         run: gradle wrapper --gradle-version 9.6.0 --distribution-type bin
 
