@@ -4,8 +4,7 @@ import android.webkit.WebView
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,42 +17,37 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.rememberTextFieldState
-import androidx.compose.foundation.clickable
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -67,14 +61,22 @@ import com.subbrowser.ui.theme.SubSurfaceElevated
 import com.subbrowser.ui.theme.SubTextPrimary
 import com.subbrowser.ui.theme.SubTextSecondary
 
+private enum class Surface {
+    NONE,
+    COMMAND,
+    SPACES,
+    TOOLS,
+    PRIVACY,
+    SETTINGS,
+}
+
 @Composable
 fun BrowserWorkspace(
     controller: BrowserController = remember { BrowserController() },
 ) {
     var state by remember { mutableStateOf(BrowserState()) }
     var webViewEpoch by remember { mutableIntStateOf(0) }
-    var workspaceOpen by remember { mutableStateOf(false) }
-    var portalOpen by remember { mutableStateOf(false) }
+    var surface by remember { mutableStateOf(Surface.NONE) }
     val commandState = rememberTextFieldState()
     val context = LocalContext.current
 
@@ -83,12 +85,11 @@ fun BrowserWorkspace(
         onDispose { controller.clearObserver() }
     }
 
-    BackHandler(enabled = workspaceOpen || portalOpen) {
-        workspaceOpen = false
-        portalOpen = false
+    BackHandler(enabled = surface != Surface.NONE) {
+        surface = Surface.NONE
     }
 
-    BackHandler(enabled = !workspaceOpen && !portalOpen && state.canGoBack) {
+    BackHandler(enabled = surface == Surface.NONE && state.canGoBack) {
         controller.goBack()
     }
 
@@ -98,14 +99,14 @@ fun BrowserWorkspace(
             .background(SubBlack),
     ) {
         if (state.rendererCrashed) {
-            CrashWorkspace(
+            CrashSurface(
                 onRecover = {
                     controller.resetAfterRendererCrash()
                     webViewEpoch++
                 },
             )
         } else {
-            androidx.compose.runtime.key(webViewEpoch) {
+            key(webViewEpoch) {
                 AndroidView(
                     factory = {
                         WebView(context).also { configureBrowserWebView(it, controller) }
@@ -116,52 +117,54 @@ fun BrowserWorkspace(
                 )
             }
 
-            if (state.url == "about:blank" && !workspaceOpen) {
-                HomeCanvas(
-                    onFocusPortal = { portalOpen = true },
-                    onNewPrivate = {
+            if (state.url == "about:blank" && surface == Surface.NONE) {
+                HomeSurface(
+                    onOpen = { surface = Surface.COMMAND },
+                    onPrivate = {
                         controller.newTab(isPrivate = true)
                         webViewEpoch++
                     },
-                    onWorkspace = { workspaceOpen = true },
+                    onSpaces = { surface = Surface.SPACES },
                 )
             }
 
-            FloatingPortal(
+            CommandPortal(
                 state = state,
                 textState = commandState,
-                expanded = portalOpen,
-                onExpand = { portalOpen = true },
-                onCollapse = { portalOpen = false },
+                expanded = surface == Surface.COMMAND,
+                onOpen = { surface = Surface.COMMAND },
+                onClose = { surface = Surface.NONE },
                 onSubmit = {
-                    controller.navigate(commandState.text.toString())
+                    val value = commandState.text.toString().trim()
+                    if (value.isNotEmpty()) {
+                        controller.navigate(value)
+                    }
                     commandState.edit { replace(0, length, "") }
-                    portalOpen = false
+                    surface = Surface.NONE
                 },
             )
 
-            if (!workspaceOpen) {
-                EdgeActions(
+            if (surface == Surface.NONE) {
+                MinimalDock(
                     state = state,
                     onBack = controller::goBack,
                     onForward = controller::goForward,
-                    onReload = { if (state.loading) controller.stop() else controller.reload() },
-                    onWorkspace = { workspaceOpen = true },
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .windowInsetsPadding(WindowInsets.navigationBars)
-                        .imePadding(),
+                    onReload = {
+                        if (state.loading) controller.stop() else controller.reload()
+                    },
+                    onSpaces = { surface = Surface.SPACES },
+                    onTools = { surface = Surface.TOOLS },
                 )
             }
         }
 
-        if (workspaceOpen) {
-            WorkspaceOverlay(
+        when (surface) {
+            Surface.SPACES -> SpacesSurface(
                 state = state,
-                onDismiss = { workspaceOpen = false },
+                onDismiss = { surface = Surface.NONE },
                 onSelect = {
                     controller.selectTab(it)
-                    workspaceOpen = false
+                    surface = Surface.NONE
                     webViewEpoch++
                 },
                 onClose = {
@@ -170,24 +173,35 @@ fun BrowserWorkspace(
                 },
                 onNew = {
                     controller.newTab()
-                    workspaceOpen = false
+                    surface = Surface.NONE
                     webViewEpoch++
                 },
                 onPrivate = {
                     controller.newTab(isPrivate = true)
-                    workspaceOpen = false
+                    surface = Surface.NONE
                     webViewEpoch++
                 },
             )
+
+            Surface.TOOLS -> ToolsSurface(
+                onDismiss = { surface = Surface.NONE },
+                onSpaces = { surface = Surface.SPACES },
+                onPrivacy = { surface = Surface.PRIVACY },
+                onSettings = { surface = Surface.SETTINGS },
+            )
+
+            Surface.PRIVACY -> PrivacySurface(onDismiss = { surface = Surface.TOOLS })
+            Surface.SETTINGS -> SettingsSurface(onDismiss = { surface = Surface.TOOLS })
+            Surface.COMMAND, Surface.NONE -> Unit
         }
     }
 }
 
 @Composable
-private fun HomeCanvas(
-    onFocusPortal: () -> Unit,
-    onNewPrivate: () -> Unit,
-    onWorkspace: () -> Unit,
+private fun HomeSurface(
+    onOpen: () -> Unit,
+    onPrivate: () -> Unit,
+    onSpaces: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -199,39 +213,45 @@ private fun HomeCanvas(
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            text = "SUB",
+            "SUB",
             color = SubSaffron,
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = 4.sp,
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(7.dp))
         Text(
-            text = "ready when you are",
-            color = SubTextSecondary,
+            "ready when you are",
+            color = SubTextPrimary,
             fontSize = 13.sp,
         )
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(4.dp))
         Text(
-            text = "tap the surface above",
-            color = SubTextSecondary.copy(alpha = 0.6f),
+            "tap the surface above",
+            color = SubTextSecondary,
             fontSize = 11.sp,
         )
+        Spacer(Modifier.height(14.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            TinyPill("open", onOpen)
+            TinyPill("private", onPrivate)
+            TinyPill("spaces", onSpaces)
+        }
     }
 }
 
 @Composable
-private fun FloatingPortal(
+private fun CommandPortal(
     state: BrowserState,
     textState: TextFieldState,
     expanded: Boolean,
-    onExpand: () -> Unit,
-    onCollapse: () -> Unit,
+    onOpen: () -> Unit,
+    onClose: () -> Unit,
     onSubmit: () -> Unit,
 ) {
-    val label = when {
+    val title = when {
         expanded -> "Search or enter address"
-        state.loading -> "${state.progress}%"
+        state.loading -> "Loading ${state.progress}%"
         state.title != "New Tab" -> state.title
         else -> "Search or enter address"
     }
@@ -240,63 +260,63 @@ private fun FloatingPortal(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 20.dp, vertical = 10.dp),
     ) {
         Row(
             modifier = Modifier
-                .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(SubSurface.copy(alpha = 0.92f))
+                .clip(RoundedCornerShape(15.dp))
+                .background(SubSurface.copy(alpha = 0.94f))
                 .border(
                     1.dp,
-                    if (expanded) SubSaffron.copy(alpha = 0.5f) else SubSurfaceElevated,
-                    RoundedCornerShape(16.dp),
+                    if (expanded) SubSaffron.copy(alpha = 0.50f) else SubSurfaceElevated,
+                    RoundedCornerShape(15.dp),
                 )
-                .padding(horizontal = 11.dp, vertical = 7.dp)
-                .clickable(onClick = onExpand),
+                .clickable(onClick = onOpen)
+                .padding(horizontal = 10.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = if (state.secureConnection) "•" else "○",
+                if (state.secureConnection) "●" else "○",
                 color = if (state.secureConnection) SubSaffron else SubTextSecondary,
-                fontSize = 10.sp,
+                fontSize = 9.sp,
             )
             Spacer(Modifier.width(7.dp))
+
             if (expanded) {
                 BasicTextField(
                     state = textState,
                     modifier = Modifier.weight(1f),
-                    textStyle = TextStyle(color = SubTextPrimary, fontSize = 14.sp),
+                    textStyle = TextStyle(color = SubTextPrimary, fontSize = 13.sp),
                     cursorBrush = SolidColor(SubSaffron),
                     lineLimits = TextFieldLineLimits.SingleLine,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                     onKeyboardAction = { onSubmit() },
                     decorator = { inner ->
                         if (textState.text.isEmpty()) {
-                            Text(label, color = SubTextSecondary, fontSize = 14.sp, maxLines = 1)
+                            Text(title, color = SubTextSecondary, maxLines = 1)
                         }
                         inner()
                     },
                 )
-                TextButton(
-                    onClick = onCollapse,
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                        horizontal = 3.dp, vertical = 0.dp
-                    ),
-                ) {
-                    Text("×", color = SubTextSecondary, fontSize = 17.sp)
-                }
+                Text(
+                    "×",
+                    color = SubTextSecondary,
+                    fontSize = 17.sp,
+                    modifier = Modifier
+                        .padding(start = 7.dp)
+                        .clickable(onClick = onClose),
+                )
             } else {
                 Text(
-                    text = label,
+                    title,
                     color = if (state.title != "New Tab") SubTextPrimary else SubTextSecondary,
                     fontSize = 13.sp,
                     maxLines = 1,
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    text = "${state.session.tabs.size}",
+                    "${state.session.tabs.size}",
                     color = SubTextSecondary,
                     fontSize = 10.sp,
                 )
@@ -306,31 +326,38 @@ private fun FloatingPortal(
 }
 
 @Composable
-private fun EdgeActions(
+private fun MinimalDock(
     state: BrowserState,
     onBack: () -> Unit,
     onForward: () -> Unit,
     onReload: () -> Unit,
-    onWorkspace: () -> Unit,
-    modifier: Modifier = Modifier,
+    onSpaces: () -> Unit,
+    onTools: () -> Unit,
 ) {
     Row(
-        modifier = modifier.padding(bottom = 7.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .statusBarsPadding()
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .imePadding()
+            .padding(horizontal = 18.dp, vertical = 7.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        CompactAction("‹", onBack, state.canGoBack)
+        DockButton("‹", onBack, state.canGoBack)
         Spacer(Modifier.width(5.dp))
-        CompactAction(if (state.loading) "×" else "↻", onReload, true)
+        DockButton(if (state.loading) "×" else "↻", onReload, true)
         Spacer(Modifier.width(5.dp))
-        CompactAction("›", onForward, state.canGoForward)
+        DockButton("›", onForward, state.canGoForward)
         Spacer(Modifier.width(5.dp))
-        CompactAction("${state.session.tabs.size}", onWorkspace, true, emphasized = true)
+        DockButton("${state.session.tabs.size}", onSpaces, true, emphasized = true)
+        Spacer(Modifier.width(5.dp))
+        DockButton("⋯", onTools, true)
     }
 }
 
 @Composable
-private fun CompactAction(
+private fun DockButton(
     label: String,
     onClick: () -> Unit,
     enabled: Boolean,
@@ -338,103 +365,33 @@ private fun CompactAction(
 ) {
     Box(
         modifier = Modifier
-            .size(32.dp)
+            .size(31.dp)
             .clip(CircleShape)
             .background(
-                if (emphasized) SubSaffron.copy(alpha = 0.09f)
-                else SubSurface.copy(alpha = 0.9f)
+                if (emphasized) SubSaffron.copy(alpha = 0.10f)
+                else SubSurface.copy(alpha = 0.88f)
             )
             .border(
                 1.dp,
-                if (emphasized) SubSaffron.copy(alpha = 0.4f) else SubSurfaceElevated,
+                if (emphasized) SubSaffron.copy(alpha = 0.42f)
+                else SubSurfaceElevated,
                 CircleShape,
             )
-            .alpha(if (enabled) 1f else 0.3f)
+            .alpha(if (enabled) 1f else 0.28f)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = label,
+            label,
             color = if (emphasized) SubSaffron else SubTextPrimary,
-            fontSize = if (label.length > 1) 10.sp else 16.sp,
+            fontSize = if (label.length > 1) 9.sp else 15.sp,
             fontWeight = if (emphasized) FontWeight.SemiBold else FontWeight.Normal,
         )
     }
 }
 
 @Composable
-private fun ActionGlyph(
-    glyph: String,
-    onClick: () -> Unit,
-    enabled: Boolean,
-    emphasized: Boolean = false,
-) {
-    Box(
-        modifier = Modifier
-            .size(if (emphasized) 50.dp else 44.dp)
-            .clip(CircleShape)
-            .background(
-                if (emphasized) SubSaffron.copy(alpha = 0.16f) else SubSurface.copy(alpha = 0.92f)
-            )
-            .border(
-                1.dp,
-                if (emphasized) SubSaffron.copy(alpha = 0.55f) else SubSurfaceElevated,
-                CircleShape,
-            )
-            .alpha(if (enabled) 1f else 0.32f)
-            .clickable(enabled = enabled, onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            glyph,
-            color = if (emphasized) SubSaffron else SubTextPrimary,
-            fontSize = 19.sp,
-        )
-    }
-}
-
-@Composable
-private fun PortalAction(
-    label: String,
-    detail: String,
-    onClick: () -> Unit,
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(24.dp))
-            .background(SubSurface)
-            .border(1.dp, SubSurfaceElevated, RoundedCornerShape(24.dp))
-            .clickable(onClick = onClick)
-            .padding(18.dp),
-    ) {
-        Text(label, color = SubTextPrimary, fontSize = 17.sp, fontWeight = FontWeight.Medium)
-        Spacer(Modifier.height(4.dp))
-        Text(detail, color = SubTextSecondary, fontSize = 13.sp)
-    }
-}
-
-@Composable
-private fun MiniAction(
-    label: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(18.dp))
-            .background(SubSurface)
-            .border(1.dp, SubSurfaceElevated, RoundedCornerShape(18.dp))
-            .clickable(onClick = onClick)
-            .padding(vertical = 14.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(label, color = SubTextPrimary, fontSize = 13.sp)
-    }
-}
-
-@Composable
-private fun WorkspaceOverlay(
+private fun SpacesSurface(
     state: BrowserState,
     onDismiss: () -> Unit,
     onSelect: (Long) -> Unit,
@@ -442,160 +399,353 @@ private fun WorkspaceOverlay(
     onNew: () -> Unit,
     onPrivate: () -> Unit,
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(SubBlack.copy(alpha = 0.97f))
-            .statusBarsPadding()
-            .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(horizontal = 18.dp, vertical = 16.dp),
-    ) {
-        Column(Modifier.fillMaxSize()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column {
-                    Text("SPACES", color = SubSaffron, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 3.sp)
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        "${state.session.tabs.size} active page${if (state.session.tabs.size == 1) "" else "s"}",
-                        color = SubTextPrimary,
-                        fontSize = 25.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-                TextButton(onClick = onDismiss) {
-                    Text("Return", color = SubTextPrimary)
-                }
+    FullSurface {
+        SurfaceHeader(
+            eyebrow = "SPACES",
+            title = "${state.session.tabs.size} page${if (state.session.tabs.size == 1) "" else "s"}",
+            onDismiss = onDismiss,
+        )
+
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(7.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            items(state.session.tabs, key = { it.id }) { tab ->
+                CompactPageRow(
+                    number = tab.id,
+                    title = tab.title.ifBlank { "New Tab" },
+                    url = tab.url,
+                    private = tab.isPrivate,
+                    active = tab.id == state.session.activeTabId,
+                    onOpen = { onSelect(tab.id) },
+                    onClose = { onClose(tab.id) },
+                )
             }
 
-            Spacer(Modifier.height(18.dp))
-
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
-            ) {
-                items(state.session.tabs, key = { it.id }) { tab ->
-                    SpaceCard(
-                        tab = tab,
-                        active = tab.id == state.session.activeTabId,
-                        onOpen = { onSelect(tab.id) },
-                        onClose = { onClose(tab.id) },
-                    )
+            item {
+                Spacer(Modifier.height(4.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TinyPill("new", onNew, Modifier.weight(1f))
+                    TinyPill("private", onPrivate, Modifier.weight(1f))
                 }
             }
-
-            Spacer(Modifier.height(18.dp))
-
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                MiniAction("New page", onNew, Modifier.weight(1f))
-                MiniAction("Private page", onPrivate, Modifier.weight(1f))
-            }
-
-            Spacer(Modifier.height(14.dp))
-
-            Text(
-                text = "Pages stay separate from the browsing surface.",
-                color = SubTextSecondary,
-                fontSize = 13.sp,
-                modifier = Modifier.padding(horizontal = 4.dp),
-            )
         }
     }
 }
 
 @Composable
-private fun SpaceCard(
-    tab: com.subbrowser.browser.session.TabState,
+private fun CompactPageRow(
+    number: Long,
+    title: String,
+    url: String,
+    private: Boolean,
     active: Boolean,
     onOpen: () -> Unit,
     onClose: () -> Unit,
 ) {
-    Column(
+    Row(
         modifier = Modifier
-            .width(285.dp)
-            .height(300.dp)
-            .clip(RoundedCornerShape(28.dp))
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
             .background(if (active) SubSurfaceElevated else SubSurface)
             .border(
                 1.dp,
-                if (active) SubSaffron.copy(alpha = 0.72f) else SubSurfaceElevated,
-                RoundedCornerShape(28.dp),
+                if (active) SubSaffron.copy(alpha = 0.48f) else SubSurfaceElevated,
+                RoundedCornerShape(12.dp),
             )
             .clickable(onClick = onOpen)
-            .padding(18.dp),
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            Text(
-                text = if (tab.isPrivate) "PRIVATE" else "PAGE ${tab.id}",
-                color = if (active) SubSaffron else SubTextSecondary,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.5.sp,
-            )
-            TextButton(onClick = onClose) {
-                Text("×", color = SubTextSecondary, fontSize = 18.sp)
-            }
-        }
-
-        Spacer(Modifier.height(28.dp))
-
         Text(
-            text = tab.title.ifBlank { "Untitled page" },
-            color = SubTextPrimary,
-            fontSize = 21.sp,
-            lineHeight = 26.sp,
-            fontWeight = FontWeight.Medium,
-            maxLines = 3,
-        )
-
-        Spacer(Modifier.height(10.dp))
-
-        Text(
-            text = tab.url,
-            color = SubTextSecondary,
-            fontSize = 11.sp,
-            lineHeight = 16.sp,
-            maxLines = 3,
-        )
-
-        Spacer(Modifier.weight(1f))
-
-        Text(
-            text = if (active) "CURRENT SPACE" else "OPEN SPACE",
+            if (private) "P" else "$number",
             color = if (active) SubSaffron else SubTextSecondary,
-            fontSize = 11.sp,
+            fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
-            letterSpacing = 1.2.sp,
+        )
+        Spacer(Modifier.width(9.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                color = SubTextPrimary,
+                fontSize = 12.sp,
+                maxLines = 1,
+            )
+            Text(
+                url,
+                color = SubTextSecondary,
+                fontSize = 9.sp,
+                maxLines = 1,
+            )
+        }
+        Text(
+            "×",
+            color = SubTextSecondary,
+            fontSize = 15.sp,
+            modifier = Modifier
+                .padding(start = 8.dp)
+                .clickable(onClick = onClose),
         )
     }
 }
 
 @Composable
-private fun CrashWorkspace(onRecover: () -> Unit) {
+private fun ToolsSurface(
+    onDismiss: () -> Unit,
+    onSpaces: () -> Unit,
+    onPrivacy: () -> Unit,
+    onSettings: () -> Unit,
+) {
+    FullSurface {
+        SurfaceHeader("TOOLS", "browser controls", onDismiss)
+
+        ToolGroup("PAGE") {
+            ToolPill("Find in page", "find")
+            ToolPill("Reader view", "reader")
+            ToolPill("Translate", "translate")
+            ToolPill("Share", "share")
+            ToolPill("Save page", "save")
+            ToolPill("Download", "download")
+        }
+
+        ToolGroup("VIEW") {
+            ToolPill("Zoom out", "−")
+            ToolPill("Zoom in", "+")
+            ToolPill("Desktop site", "desktop")
+            ToolPill("Fullscreen", "full")
+        }
+
+        ToolGroup("BROWSER") {
+            ToolPill("History", "history")
+            ToolPill("Bookmarks", "bookmarks")
+            ToolPill("Downloads", "downloads")
+            ToolPill("Spaces", "spaces", onSpaces)
+            ToolPill("Privacy", "privacy", onPrivacy)
+            ToolPill("Settings", "settings", onSettings)
+        }
+
+        Text(
+            "Controls are staged here first; behavior will be wired into the browser core.",
+            color = SubTextSecondary,
+            fontSize = 10.sp,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+    }
+}
+
+@Composable
+private fun PrivacySurface(onDismiss: () -> Unit) {
+    FullSurface {
+        SurfaceHeader("PRIVACY", "protection surface", onDismiss)
+
+        ToolGroup("SITE") {
+            ToolPill("Connection secure", "secure")
+            ToolPill("Site permissions", "permissions")
+            ToolPill("Cookies", "cookies")
+            ToolPill("JavaScript", "js")
+        }
+
+        ToolGroup("PROTECTION") {
+            ToolPill("Safe Browsing", "on")
+            ToolPill("Block trackers", "soon")
+            ToolPill("Block ads", "soon")
+            ToolPill("Anti-fingerprinting", "soon")
+            ToolPill("Private page", "new")
+        }
+
+        Text(
+            "Privacy controls are UI placeholders until the policy engine is implemented.",
+            color = SubTextSecondary,
+            fontSize = 10.sp,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+    }
+}
+
+@Composable
+private fun SettingsSurface(onDismiss: () -> Unit) {
+    FullSurface {
+        SurfaceHeader("SETTINGS", "browser preferences", onDismiss)
+
+        ToolGroup("GENERAL") {
+            ToolPill("Search engine", "choose")
+            ToolPill("Home surface", "choose")
+            ToolPill("Appearance", "dark")
+            ToolPill("Language", "auto")
+        }
+
+        ToolGroup("BEHAVIOR") {
+            ToolPill("Open links", "tab")
+            ToolPill("Downloads", "ask")
+            ToolPill("Autoplay", "block")
+            ToolPill("Popups", "block")
+            ToolPill("Desktop site", "off")
+        }
+
+        ToolGroup("DATA") {
+            ToolPill("Clear browsing data", "clear")
+            ToolPill("Site data", "manage")
+            ToolPill("Permissions", "manage")
+        }
+
+        Text(
+            "Settings are staged now so every surface has a defined home before wiring behavior.",
+            color = SubTextSecondary,
+            fontSize = 10.sp,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+    }
+}
+
+@Composable
+private fun FullSurface(content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(SubBlack.copy(alpha = 0.985f))
+            .statusBarsPadding()
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .padding(horizontal = 18.dp, vertical = 10.dp),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.Top,
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
+private fun SurfaceHeader(
+    eyebrow: String,
+    title: String,
+    onDismiss: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column {
+            Text(
+                eyebrow,
+                color = SubSaffron,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 2.5.sp,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                title,
+                color = SubTextPrimary,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        Text(
+            "×",
+            color = SubTextSecondary,
+            fontSize = 18.sp,
+            modifier = Modifier.clickable(onClick = onDismiss),
+        )
+    }
+    Spacer(Modifier.height(10.dp))
+}
+
+@Composable
+private fun ToolGroup(
+    title: String,
+    content: @Composable () -> Unit,
+) {
+    Text(
+        title,
+        color = SubTextSecondary,
+        fontSize = 8.sp,
+        fontWeight = FontWeight.Bold,
+        letterSpacing = 1.8.sp,
+        modifier = Modifier.padding(start = 2.dp, bottom = 5.dp),
+    )
+    content()
+    Spacer(Modifier.height(9.dp))
+}
+
+@Composable
+private fun ToolPill(
+    label: String,
+    value: String,
+    onClick: (() -> Unit)? = null,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(9.dp))
+            .background(SubSurface.copy(alpha = 0.78f))
+            .border(1.dp, SubSurfaceElevated, RoundedCornerShape(9.dp))
+            .then(
+                if (onClick != null) Modifier.clickable(onClick = onClick)
+                else Modifier
+            )
+            .padding(horizontal = 9.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            color = SubTextPrimary,
+            fontSize = 11.sp,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            value,
+            color = SubTextSecondary,
+            fontSize = 9.sp,
+        )
+    }
+}
+
+@Composable
+private fun TinyPill(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(9.dp))
+            .background(SubSurface)
+            .border(1.dp, SubSurfaceElevated, RoundedCornerShape(9.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = SubTextPrimary, fontSize = 10.sp)
+    }
+}
+
+@Composable
+private fun CrashSurface(onRecover: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .statusBarsPadding()
             .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(28.dp),
+            .padding(20.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("The page engine stopped", color = SubTextPrimary, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(10.dp))
         Text(
-            "The renderer ended unexpectedly. The browsing space is still intact.",
-            color = SubTextSecondary,
-            fontSize = 14.sp,
+            "page engine stopped",
+            color = SubTextPrimary,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold,
         )
-        Spacer(Modifier.height(20.dp))
-        TextButton(onClick = onRecover) {
-            Text("Restart page", color = SubSaffron)
-        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "the browsing space is still intact",
+            color = SubTextSecondary,
+            fontSize = 10.sp,
+        )
+        Spacer(Modifier.height(10.dp))
+        TinyPill("restart page", onRecover)
     }
 }
