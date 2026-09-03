@@ -3,6 +3,7 @@ package com.subbrowser.browser.web
 import android.graphics.Bitmap
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
+import android.webkit.WebChromeClient
 import android.webkit.WebViewClient
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewCompat
@@ -29,6 +30,12 @@ fun configureBrowserWebView(
         WebSettingsCompat.setSafeBrowsingEnabled(webView.settings, true)
     }
 
+    webView.webChromeClient = object : WebChromeClient() {
+        override fun onReceivedTitle(view: WebView, title: String) {
+            controller.onTitleChanged(title)
+        }
+    }
+
     webView.webViewClient = object : WebViewClient() {
         override fun shouldOverrideUrlLoading(
             view: WebView,
@@ -52,9 +59,6 @@ fun configureBrowserWebView(
             return true
         }
 
-        override fun onReceivedTitle(view: WebView, title: String) {
-            controller.onTitleChanged(title)
-        }
     }
 
     webView.setDownloadListener { _, _, _, _, _ ->

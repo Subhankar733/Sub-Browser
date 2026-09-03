@@ -135,7 +135,7 @@ fun BrowserWorkspace(
                 onCollapse = { portalOpen = false },
                 onSubmit = {
                     controller.navigate(commandState.text.toString())
-                    commandState.clearText()
+                    commandState.edit { replace(0, length, "") }
                     portalOpen = false
                 },
             )
