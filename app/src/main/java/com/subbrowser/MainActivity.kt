@@ -15,9 +15,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         browserController.restoreInstanceState(savedInstanceState)
+
         setContent {
             SubBrowserTheme {
-                BrowserWorkspace(browserController)
+                BrowserWorkspace(controller = browserController)
             }
         }
     }

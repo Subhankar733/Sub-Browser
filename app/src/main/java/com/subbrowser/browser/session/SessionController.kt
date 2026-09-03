@@ -109,7 +109,8 @@ class SessionController {
         val requestedActive = bundle.getLong(KEY_ACTIVE_ID, restoredTabs.first().id)
         state = SessionState(
             tabs = restoredTabs,
-            activeTabId = restoredTabs.firstOrNull { it.id == requestedActive }?.id ?: restoredTabs.first().id,
+            activeTabId = restoredTabs.firstOrNull { it.id == requestedActive }?.id
+                ?: restoredTabs.first().id,
         )
         nextId = maxOf(bundle.getLong(KEY_NEXT_ID, 1L), (ids.maxOrNull() ?: 0L) + 1L)
         publish()

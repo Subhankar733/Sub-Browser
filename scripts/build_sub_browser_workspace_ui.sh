@@ -1,3 +1,529 @@
+#!/data/data/com.termux/files/usr/bin/bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+printf '%s\n' '== Sub Browser: original browsing workspace UI =='
+
+mkdir -p \
+  app/src/main/java/com/subbrowser/browser/model \
+  app/src/main/java/com/subbrowser/browser/session \
+  app/src/main/java/com/subbrowser/browser/web \
+  app/src/main/java/com/subbrowser/ui/browser
+
+# Keep the browser core API coherent with the UI. This is a clean-room implementation:
+# no source/config/assets are copied from another browser.
+cat > app/src/main/java/com/subbrowser/browser/model/BrowserState.kt <<'EOF'
+package com.subbrowser.browser.model
+
+import com.subbrowser.browser.session.SessionState
+
+data class BrowserState(
+    val session: SessionState = SessionState(),
+    val url: String = "about:blank",
+    val title: String = "New Tab",
+    val loading: Boolean = false,
+    val progress: Int = 0,
+    val canGoBack: Boolean = false,
+    val canGoForward: Boolean = false,
+    val rendererCrashed: Boolean = false,
+    val secureConnection: Boolean = false,
+) {
+    val activeTab get() = session.tabs.firstOrNull { it.id == session.activeTabId }
+}
+EOF
+
+cat > app/src/main/java/com/subbrowser/browser/session/TabState.kt <<'EOF'
+package com.subbrowser.browser.session
+
+data class TabState(
+    val id: Long,
+    val url: String = "about:blank",
+    val title: String = "New Tab",
+    val isPrivate: Boolean = false,
+    val loading: Boolean = false,
+    val progress: Int = 0,
+    val canGoBack: Boolean = false,
+    val canGoForward: Boolean = false,
+)
+EOF
+
+cat > app/src/main/java/com/subbrowser/browser/session/SessionState.kt <<'EOF'
+package com.subbrowser.browser.session
+
+data class SessionState(
+    val tabs: List<TabState> = listOf(TabState(id = 1L)),
+    val activeTabId: Long = 1L,
+)
+EOF
+
+cat > app/src/main/java/com/subbrowser/browser/session/SessionController.kt <<'EOF'
+package com.subbrowser.browser.session
+
+import android.os.Bundle
+
+class SessionController {
+    companion object {
+        private const val KEY_TAB_IDS = "tab_ids"
+        private const val KEY_TAB_URLS = "tab_urls"
+        private const val KEY_TAB_TITLES = "tab_titles"
+        private const val KEY_TAB_PRIVATE = "tab_private"
+        private const val KEY_ACTIVE_ID = "active_id"
+        private const val KEY_NEXT_ID = "next_id"
+    }
+
+    var state: SessionState = SessionState()
+        private set
+
+    private var nextId = 2L
+    private var observer: ((SessionState) -> Unit)? = null
+
+    fun observe(observer: (SessionState) -> Unit) {
+        this.observer = observer
+        observer(state)
+    }
+
+    fun clearObserver() {
+        observer = null
+    }
+
+    fun newTab(isPrivate: Boolean = false): Long {
+        val id = nextId++
+        state = state.copy(
+            tabs = state.tabs + TabState(id = id, isPrivate = isPrivate),
+            activeTabId = id,
+        )
+        publish()
+        return id
+    }
+
+    fun selectTab(id: Long) {
+        if (state.tabs.any { it.id == id } && id != state.activeTabId) {
+            state = state.copy(activeTabId = id)
+            publish()
+        }
+    }
+
+    fun closeTab(id: Long): Long? {
+        if (state.tabs.size == 1 || state.tabs.none { it.id == id }) return null
+        val wasActive = state.activeTabId == id
+        val removedIndex = state.tabs.indexOfFirst { it.id == id }
+        val remaining = state.tabs.filterNot { it.id == id }
+        val nextActive = if (wasActive) {
+            remaining.getOrNull((removedIndex - 1).coerceAtLeast(0))?.id
+                ?: remaining.first().id
+        } else {
+            state.activeTabId
+        }
+        state = state.copy(tabs = remaining, activeTabId = nextActive)
+        publish()
+        return nextActive
+    }
+
+    fun updateTab(
+        id: Long,
+        url: String? = null,
+        title: String? = null,
+        loading: Boolean? = null,
+        progress: Int? = null,
+        canGoBack: Boolean? = null,
+        canGoForward: Boolean? = null,
+    ) {
+        val current = state.tabs.firstOrNull { it.id == id } ?: return
+        val updated = current.copy(
+            url = url ?: current.url,
+            title = title ?: current.title,
+            loading = loading ?: current.loading,
+            progress = progress ?: current.progress,
+            canGoBack = canGoBack ?: current.canGoBack,
+            canGoForward = canGoForward ?: current.canGoForward,
+        )
+        if (updated == current) return
+        state = state.copy(tabs = state.tabs.map { if (it.id == id) updated else it })
+        publish()
+    }
+
+    fun saveMetadata(outState: Bundle) {
+        outState.putLongArray(KEY_TAB_IDS, state.tabs.map { it.id }.toLongArray())
+        outState.putStringArrayList(KEY_TAB_URLS, ArrayList(state.tabs.map { it.url }))
+        outState.putStringArrayList(KEY_TAB_TITLES, ArrayList(state.tabs.map { it.title }))
+        outState.putBooleanArray(KEY_TAB_PRIVATE, state.tabs.map { it.isPrivate }.toBooleanArray())
+        outState.putLong(KEY_ACTIVE_ID, state.activeTabId)
+        outState.putLong(KEY_NEXT_ID, nextId)
+    }
+
+    fun restoreMetadata(bundle: Bundle?) {
+        val ids = bundle?.getLongArray(KEY_TAB_IDS) ?: return
+        if (ids.isEmpty()) return
+        val urls = bundle.getStringArrayList(KEY_TAB_URLS).orEmpty()
+        val titles = bundle.getStringArrayList(KEY_TAB_TITLES).orEmpty()
+        val privateFlags = bundle.getBooleanArray(KEY_TAB_PRIVATE)
+        val restoredTabs = ids.mapIndexed { index, id ->
+            TabState(
+                id = id,
+                url = urls.getOrNull(index) ?: "about:blank",
+                title = titles.getOrNull(index) ?: "New Tab",
+                isPrivate = privateFlags?.getOrNull(index) ?: false,
+            )
+        }
+        val requestedActive = bundle.getLong(KEY_ACTIVE_ID, restoredTabs.first().id)
+        state = SessionState(
+            tabs = restoredTabs,
+            activeTabId = restoredTabs.firstOrNull { it.id == requestedActive }?.id
+                ?: restoredTabs.first().id,
+        )
+        nextId = maxOf(bundle.getLong(KEY_NEXT_ID, 1L), (ids.maxOrNull() ?: 0L) + 1L)
+        publish()
+    }
+
+    private fun publish() {
+        observer?.invoke(state)
+    }
+}
+EOF
+
+cat > app/src/main/java/com/subbrowser/browser/BrowserController.kt <<'EOF'
+package com.subbrowser.browser
+
+import android.net.Uri
+import android.os.Bundle
+import android.webkit.WebView
+import androidx.webkit.NavigationParameters
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
+import com.subbrowser.browser.model.BrowserState
+import com.subbrowser.browser.session.SessionController
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
+
+class BrowserController {
+    companion object {
+        private const val STATE_KEY = "sub_browser_webview_state"
+        private const val MAX_WEBVIEW_STATE_BYTES = 96 * 1024
+    }
+
+    private val session = SessionController()
+    private val savedTabStates = mutableMapOf<Long, Bundle>()
+    private var webView: WebView? = null
+    private var observer: ((BrowserState) -> Unit)? = null
+    private var currentState = BrowserState(session = session.state)
+
+    init {
+        session.observe { sessionState ->
+            currentState = currentState.copy(session = sessionState)
+            val active = sessionState.tabs.firstOrNull { it.id == sessionState.activeTabId }
+            if (active != null && webView == null) {
+                currentState = currentState.copy(
+                    url = active.url,
+                    title = active.title,
+                    loading = active.loading,
+                    progress = active.progress,
+                    canGoBack = active.canGoBack,
+                    canGoForward = active.canGoForward,
+                )
+            }
+            publish()
+        }
+    }
+
+    fun observe(observer: (BrowserState) -> Unit) {
+        this.observer = observer
+        observer(currentState)
+    }
+
+    fun clearObserver() {
+        observer = null
+    }
+
+    fun attach(view: WebView) {
+        webView = view
+        val active = session.state.tabs.firstOrNull { it.id == session.state.activeTabId }
+        val saved = savedTabStates[session.state.activeTabId]
+        if (saved != null) {
+            view.restoreState(saved)
+            savedTabStates.remove(session.state.activeTabId)
+        } else if (active != null && active.url != "about:blank") {
+            navigate(active.url)
+        }
+        sync()
+    }
+
+    fun detach(view: WebView) {
+        if (webView === view) webView = null
+    }
+
+    fun dispose(view: WebView) {
+        detach(view)
+        runCatching { view.stopLoading() }
+        runCatching { view.destroy() }
+    }
+
+    fun saveActiveTabState() {
+        val view = webView ?: return
+        val id = session.state.activeTabId
+        val bundle = Bundle()
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.SAVE_STATE)) {
+            WebViewCompat.saveState(view, bundle, MAX_WEBVIEW_STATE_BYTES, false)
+        } else {
+            @Suppress("DEPRECATION")
+            view.saveState(bundle)
+        }
+        savedTabStates[id] = bundle
+        session.updateTab(
+            id = id,
+            url = view.url ?: "about:blank",
+            title = view.title.orEmpty().ifBlank { "New Tab" },
+            canGoBack = view.canGoBack(),
+            canGoForward = view.canGoForward(),
+        )
+    }
+
+    fun restoreInstanceState(bundle: Bundle?) {
+        session.restoreMetadata(bundle)
+        bundle?.getBundle(STATE_KEY)?.let { savedTabStates[session.state.activeTabId] = it }
+    }
+
+    fun saveInstanceState(outState: Bundle) {
+        session.saveMetadata(outState)
+        val view = webView ?: return
+        val webState = Bundle()
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.SAVE_STATE)) {
+            WebViewCompat.saveState(view, webState, MAX_WEBVIEW_STATE_BYTES, false)
+        } else {
+            @Suppress("DEPRECATION")
+            view.saveState(webState)
+        }
+        outState.putBundle(STATE_KEY, webState)
+    }
+
+    fun newTab(isPrivate: Boolean = false) {
+        saveActiveTabState()
+        session.newTab(isPrivate)
+        publish()
+    }
+
+    fun selectTab(id: Long) {
+        if (id == session.state.activeTabId) return
+        saveActiveTabState()
+        session.selectTab(id)
+        publish()
+    }
+
+    fun closeTab(id: Long) {
+        val wasActive = id == session.state.activeTabId
+        if (wasActive) saveActiveTabState()
+        session.closeTab(id) ?: return
+        if (wasActive) webView = null
+        publish()
+    }
+
+    fun navigate(input: String) {
+        val target = normalizeInput(input) ?: return
+        val view = webView ?: return
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEBVIEW_NAVIGATE_EXPERIMENTAL_V1)) {
+            navigateWithCompat(view, target)
+        } else {
+            view.loadUrl(target)
+        }
+    }
+
+    fun goBack() {
+        webView?.takeIf { it.canGoBack() }?.goBack()
+    }
+
+    fun goForward() {
+        webView?.takeIf { it.canGoForward() }?.goForward()
+    }
+
+    fun reload() {
+        webView?.reload()
+    }
+
+    fun stop() {
+        webView?.stopLoading()
+    }
+
+    fun syncForUi() {
+        val view = webView ?: return
+        val url = view.url ?: "about:blank"
+        val title = view.title.orEmpty().ifBlank { "New Tab" }
+        val back = view.canGoBack()
+        val forward = view.canGoForward()
+        if (url == currentState.url &&
+            title == currentState.title &&
+            back == currentState.canGoBack &&
+            forward == currentState.canGoForward
+        ) return
+        update(url = url, title = title, canGoBack = back, canGoForward = forward)
+    }
+
+    fun onNavigationStarted(url: String) {
+        update(url = url, loading = true, progress = 0)
+    }
+
+    fun onNavigationFinished(url: String, title: String) {
+        update(url = url, title = title, loading = false, progress = 100)
+    }
+
+    fun onProgressChanged(progress: Int) {
+        update(loading = progress < 100, progress = progress.coerceIn(0, 100))
+    }
+
+    fun onTitleChanged(title: String) {
+        update(title = title)
+    }
+
+    fun onRendererCrashed() {
+        webView = null
+        currentState = currentState.copy(loading = false, progress = 0, rendererCrashed = true)
+        publish()
+    }
+
+    fun resetAfterRendererCrash() {
+        currentState = currentState.copy(rendererCrashed = false)
+        publish()
+    }
+
+    private fun update(
+        url: String? = null,
+        title: String? = null,
+        loading: Boolean? = null,
+        progress: Int? = null,
+        canGoBack: Boolean? = null,
+        canGoForward: Boolean? = null,
+    ) {
+        val view = webView
+        val activeId = session.state.activeTabId
+        val resolvedUrl = url ?: view?.url ?: currentState.url
+        val resolvedTitle = title ?: view?.title.orEmpty().ifBlank { currentState.title }
+        val back = canGoBack ?: view?.canGoBack() ?: currentState.canGoBack
+        val forward = canGoForward ?: view?.canGoForward() ?: currentState.canGoForward
+        currentState = currentState.copy(
+            url = resolvedUrl,
+            title = resolvedTitle,
+            loading = loading ?: currentState.loading,
+            progress = progress ?: currentState.progress,
+            canGoBack = back,
+            canGoForward = forward,
+            secureConnection = Uri.parse(resolvedUrl).scheme.equals("https", ignoreCase = true),
+        )
+        session.updateTab(
+            id = activeId,
+            url = resolvedUrl,
+            title = resolvedTitle,
+            loading = currentState.loading,
+            progress = currentState.progress,
+            canGoBack = back,
+            canGoForward = forward,
+        )
+        publish()
+    }
+
+    private fun sync() {
+        val view = webView ?: return
+        update(
+            url = view.url ?: "about:blank",
+            title = view.title.orEmpty().ifBlank { "New Tab" },
+            canGoBack = view.canGoBack(),
+            canGoForward = view.canGoForward(),
+        )
+    }
+
+    @androidx.webkit.WebViewCompat.ExperimentalNavigate
+    private fun navigateWithCompat(view: WebView, url: String) {
+        WebViewCompat.navigate(view, url, NavigationParameters.Builder().build())
+    }
+
+    private fun normalizeInput(input: String): String? {
+        val value = input.trim()
+        if (value.isEmpty()) return null
+        val hasScheme = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*://").containsMatchIn(value)
+        val looksLikeHost = value.contains('.') && !value.contains(' ')
+        return when {
+            hasScheme -> value
+            looksLikeHost -> "https://$value"
+            else -> {
+                val encoded = URLEncoder.encode(value, StandardCharsets.UTF_8.toString())
+                "https://www.google.com/search?q=$encoded"
+            }
+        }
+    }
+
+    private fun publish() {
+        observer?.invoke(currentState)
+    }
+}
+EOF
+
+cat > app/src/main/java/com/subbrowser/browser/web/BrowserWebView.kt <<'EOF'
+package com.subbrowser.browser.web
+
+import android.graphics.Bitmap
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.webkit.WebSettingsCompat
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
+import com.subbrowser.browser.BrowserController
+
+fun configureBrowserWebView(
+    webView: WebView,
+    controller: BrowserController,
+) {
+    webView.settings.apply {
+        javaScriptEnabled = true
+        domStorageEnabled = true
+        databaseEnabled = false
+        mediaPlaybackRequiresUserGesture = true
+        setSupportMultipleWindows(false)
+        javaScriptCanOpenWindowsAutomatically = false
+        allowFileAccess = false
+        allowContentAccess = false
+        mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
+    }
+
+    if (WebViewFeature.isFeatureSupported(WebViewFeature.SAFE_BROWSING_ENABLE)) {
+        WebSettingsCompat.setSafeBrowsingEnabled(webView.settings, true)
+    }
+
+    webView.webViewClient = object : WebViewClient() {
+        override fun shouldOverrideUrlLoading(
+            view: WebView,
+            request: WebResourceRequest,
+        ): Boolean = false
+
+        override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+            controller.onNavigationStarted(url)
+        }
+
+        override fun onPageFinished(view: WebView, url: String) {
+            controller.onNavigationFinished(url, view.title.orEmpty().ifBlank { "New Tab" })
+        }
+
+        override fun onRenderProcessGone(
+            view: WebView,
+            detail: android.webkit.RenderProcessGoneDetail,
+        ): Boolean {
+            controller.onRendererCrashed()
+            runCatching { view.destroy() }
+            return true
+        }
+
+        override fun onReceivedTitle(view: WebView, title: String) {
+            controller.onTitleChanged(title)
+        }
+    }
+
+    webView.setDownloadListener { _, _, _, _, _ ->
+        // Download routing is deliberately kept out of the workspace UI layer.
+        // A dedicated download manager will be added as a separate feature.
+    }
+}
+EOF
+
+cat > app/src/main/java/com/subbrowser/ui/browser/BrowserWorkspace.kt <<'EOF'
 package com.subbrowser.ui.browser
 
 import android.webkit.WebView
@@ -577,3 +1103,68 @@ private fun CrashWorkspace(onRecover: () -> Unit) {
         }
     }
 }
+EOF
+
+cat > app/src/main/java/com/subbrowser/MainActivity.kt <<'EOF'
+package com.subbrowser
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
+import com.subbrowser.browser.BrowserController
+import com.subbrowser.ui.browser.BrowserWorkspace
+import com.subbrowser.ui.theme.SubBrowserTheme
+
+class MainActivity : ComponentActivity() {
+    private val browserController = BrowserController()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
+        browserController.restoreInstanceState(savedInstanceState)
+
+        setContent {
+            SubBrowserTheme {
+                BrowserWorkspace(controller = browserController)
+            }
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        browserController.saveInstanceState(outState)
+        super.onSaveInstanceState(outState)
+    }
+}
+EOF
+
+cat > app/src/main/AndroidManifest.xml <<'EOF'
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:allowBackup="false"
+        android:hardwareAccelerated="true"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.SubBrowser"
+        android:usesCleartextTraffic="false">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+    </application>
+
+</manifest>
+EOF
+
+printf '%s\n' 'SUB_BROWSER_WORKSPACE_UI_READY'

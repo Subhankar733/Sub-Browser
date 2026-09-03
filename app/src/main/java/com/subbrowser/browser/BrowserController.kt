@@ -3,9 +3,9 @@ package com.subbrowser.browser
 import android.net.Uri
 import android.os.Bundle
 import android.webkit.WebView
+import androidx.webkit.NavigationParameters
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
-import androidx.webkit.NavigationParameters
 import com.subbrowser.browser.model.BrowserState
 import com.subbrowser.browser.session.SessionController
 import java.net.URLEncoder
@@ -213,7 +213,7 @@ class BrowserController {
         val resolvedTitle = title ?: view?.title.orEmpty().ifBlank { currentState.title }
         val back = canGoBack ?: view?.canGoBack() ?: currentState.canGoBack
         val forward = canGoForward ?: view?.canGoForward() ?: currentState.canGoForward
-        val next = currentState.copy(
+        currentState = currentState.copy(
             url = resolvedUrl,
             title = resolvedTitle,
             loading = loading ?: currentState.loading,
@@ -222,13 +222,12 @@ class BrowserController {
             canGoForward = forward,
             secureConnection = Uri.parse(resolvedUrl).scheme.equals("https", ignoreCase = true),
         )
-        currentState = next
         session.updateTab(
             id = activeId,
             url = resolvedUrl,
             title = resolvedTitle,
-            loading = next.loading,
-            progress = next.progress,
+            loading = currentState.loading,
+            progress = currentState.progress,
             canGoBack = back,
             canGoForward = forward,
         )
@@ -240,31 +239,28 @@ class BrowserController {
         update(
             url = view.url ?: "about:blank",
             title = view.title.orEmpty().ifBlank { "New Tab" },
-            loading = false,
-            progress = 100,
+            canGoBack = view.canGoBack(),
+            canGoForward = view.canGoForward(),
         )
     }
 
+    @androidx.webkit.WebViewCompat.ExperimentalNavigate
     private fun navigateWithCompat(view: WebView, url: String) {
-        @OptIn(WebViewCompat.ExperimentalNavigate::class)
-        run {
-            val params = NavigationParameters.Builder().build()
-            WebViewCompat.navigate(view, url, params)
-        }
+        WebViewCompat.navigate(view, url, NavigationParameters.Builder().build())
     }
 
     private fun normalizeInput(input: String): String? {
         val value = input.trim()
         if (value.isEmpty()) return null
-        if (value.equals("about:blank", ignoreCase = true)) return "about:blank"
-        if (value.startsWith("https://", ignoreCase = true) || value.startsWith("http://", ignoreCase = true)) {
-            return value
-        }
-        val host = runCatching { Uri.parse("https://$value").host }.getOrNull()
-        return if (!value.contains(' ') && host?.contains('.') == true) {
-            "https://$value"
-        } else {
-            "https://www.google.com/search?q=${URLEncoder.encode(value, StandardCharsets.UTF_8.name())}"
+        val hasScheme = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*://").containsMatchIn(value)
+        val looksLikeHost = value.contains('.') && !value.contains(' ')
+        return when {
+            hasScheme -> value
+            looksLikeHost -> "https://$value"
+            else -> {
+                val encoded = URLEncoder.encode(value, StandardCharsets.UTF_8.toString())
+                "https://www.google.com/search?q=$encoded"
+            }
         }
     }
 
