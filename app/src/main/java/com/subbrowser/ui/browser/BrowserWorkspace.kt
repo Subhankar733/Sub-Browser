@@ -194,41 +194,29 @@ private fun HomeCanvas(
             .fillMaxSize()
             .statusBarsPadding()
             .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(horizontal = 24.dp, vertical = 26.dp),
+            .padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
             text = "SUB",
             color = SubSaffron,
-            fontSize = 14.sp,
+            fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
-            letterSpacing = 5.sp,
+            letterSpacing = 4.sp,
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            text = "ready when you are",
+            color = SubTextSecondary,
+            fontSize = 13.sp,
         )
         Spacer(Modifier.height(12.dp))
         Text(
-            text = "Your browsing space.",
-            color = SubTextPrimary,
-            fontSize = 34.sp,
-            lineHeight = 40.sp,
-            fontWeight = FontWeight.SemiBold,
+            text = "tap the surface above",
+            color = SubTextSecondary.copy(alpha = 0.6f),
+            fontSize = 11.sp,
         )
-        Spacer(Modifier.height(10.dp))
-        Text(
-            text = "Search, move, and return to what matters.",
-            color = SubTextSecondary,
-            fontSize = 15.sp,
-        )
-        Spacer(Modifier.height(28.dp))
-        PortalAction(
-            label = "Open a page",
-            detail = "Search or enter an address",
-            onClick = onFocusPortal,
-        )
-        Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            MiniAction("Private", onNewPrivate, Modifier.weight(1f))
-            MiniAction("Spaces", onWorkspace, Modifier.weight(1f))
-        }
     }
 }
 
@@ -243,71 +231,74 @@ private fun FloatingPortal(
 ) {
     val label = when {
         expanded -> "Search or enter address"
-        state.loading -> "Loading ${state.progress}%"
+        state.loading -> "${state.progress}%"
         state.title != "New Tab" -> state.title
-        else -> "Open"
+        else -> "Search or enter address"
     }
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
     ) {
         Row(
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .clip(RoundedCornerShape(if (expanded) 30.dp else 22.dp))
-                .background(SubSurface.copy(alpha = 0.96f))
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(SubSurface.copy(alpha = 0.92f))
                 .border(
                     1.dp,
-                    if (expanded) SubSaffron.copy(alpha = 0.55f) else SubSurfaceElevated,
-                    RoundedCornerShape(if (expanded) 30.dp else 22.dp),
+                    if (expanded) SubSaffron.copy(alpha = 0.5f) else SubSurfaceElevated,
+                    RoundedCornerShape(16.dp),
                 )
-                .shadow(if (expanded) 18.dp else 8.dp, RoundedCornerShape(30.dp))
-                .padding(horizontal = 15.dp, vertical = if (expanded) 12.dp else 10.dp)
+                .padding(horizontal = 11.dp, vertical = 7.dp)
                 .clickable(onClick = onExpand),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = if (state.secureConnection) "●" else "○",
+                text = if (state.secureConnection) "•" else "○",
                 color = if (state.secureConnection) SubSaffron else SubTextSecondary,
-                fontSize = 11.sp,
+                fontSize = 10.sp,
             )
-            Spacer(Modifier.width(9.dp))
-
+            Spacer(Modifier.width(7.dp))
             if (expanded) {
                 BasicTextField(
                     state = textState,
                     modifier = Modifier.weight(1f),
-                    textStyle = TextStyle(color = SubTextPrimary, fontSize = 15.sp),
+                    textStyle = TextStyle(color = SubTextPrimary, fontSize = 14.sp),
                     cursorBrush = SolidColor(SubSaffron),
                     lineLimits = TextFieldLineLimits.SingleLine,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                     onKeyboardAction = { onSubmit() },
                     decorator = { inner ->
                         if (textState.text.isEmpty()) {
-                            Text(label, color = SubTextSecondary, maxLines = 1)
+                            Text(label, color = SubTextSecondary, fontSize = 14.sp, maxLines = 1)
                         }
                         inner()
                     },
                 )
-                TextButton(onClick = onCollapse) {
-                    Text("×", color = SubTextSecondary, fontSize = 18.sp)
+                TextButton(
+                    onClick = onCollapse,
+                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                        horizontal = 3.dp, vertical = 0.dp
+                    ),
+                ) {
+                    Text("×", color = SubTextSecondary, fontSize = 17.sp)
                 }
             } else {
                 Text(
                     text = label,
                     color = if (state.title != "New Tab") SubTextPrimary else SubTextSecondary,
-                    fontSize = 14.sp,
+                    fontSize = 13.sp,
                     maxLines = 1,
                     modifier = Modifier.weight(1f),
                 )
                 Text(
                     text = "${state.session.tabs.size}",
-                    color = SubTextPrimary,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    color = SubTextSecondary,
+                    fontSize = 10.sp,
                 )
             }
         }
@@ -324,19 +315,50 @@ private fun EdgeActions(
     modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 18.dp, vertical = 10.dp),
+        modifier = modifier.padding(bottom = 7.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ActionGlyph("←", onBack, state.canGoBack)
-        Spacer(Modifier.width(12.dp))
-        ActionGlyph(if (state.loading) "×" else "↻", onReload, true)
-        Spacer(Modifier.width(12.dp))
-        ActionGlyph("→", onForward, state.canGoForward)
-        Spacer(Modifier.width(18.dp))
-        ActionGlyph("◈", onWorkspace, true, emphasized = true)
+        CompactAction("‹", onBack, state.canGoBack)
+        Spacer(Modifier.width(5.dp))
+        CompactAction(if (state.loading) "×" else "↻", onReload, true)
+        Spacer(Modifier.width(5.dp))
+        CompactAction("›", onForward, state.canGoForward)
+        Spacer(Modifier.width(5.dp))
+        CompactAction("${state.session.tabs.size}", onWorkspace, true, emphasized = true)
+    }
+}
+
+@Composable
+private fun CompactAction(
+    label: String,
+    onClick: () -> Unit,
+    enabled: Boolean,
+    emphasized: Boolean = false,
+) {
+    Box(
+        modifier = Modifier
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(
+                if (emphasized) SubSaffron.copy(alpha = 0.09f)
+                else SubSurface.copy(alpha = 0.9f)
+            )
+            .border(
+                1.dp,
+                if (emphasized) SubSaffron.copy(alpha = 0.4f) else SubSurfaceElevated,
+                CircleShape,
+            )
+            .alpha(if (enabled) 1f else 0.3f)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = label,
+            color = if (emphasized) SubSaffron else SubTextPrimary,
+            fontSize = if (label.length > 1) 10.sp else 16.sp,
+            fontWeight = if (emphasized) FontWeight.SemiBold else FontWeight.Normal,
+        )
     }
 }
 
