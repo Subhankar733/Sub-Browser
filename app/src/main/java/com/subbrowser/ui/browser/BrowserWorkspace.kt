@@ -149,7 +149,6 @@ fun BrowserWorkspace(
 
             if (state.url == "about:blank" && panel == Panel.NONE) {
                 StartPage(
-                    onSearch = { panel = Panel.SEARCH },
                     onNewTab = {
                         controller.newTab()
                         webViewVersion++
@@ -181,17 +180,6 @@ fun BrowserWorkspace(
                 )
             }
 
-            if (panel == Panel.NONE) {
-                BottomNav(
-                    state = state,
-                    onBack = controller::goBack,
-                    onHome = {
-                        if (state.url != "about:blank") controller.navigate("about:blank")
-                    },
-                    onTabs = { panel = Panel.TABS },
-                    onMenu = { panel = Panel.MENU },
-                )
-            }
         }
 
         when (panel) {
@@ -351,7 +339,7 @@ private fun BrowserBar(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 9.dp, vertical = 7.dp),
+            .padding(horizontal = 10.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CircleButton("S", onEdit, accent = true)
@@ -361,7 +349,7 @@ private fun BrowserBar(
         Row(
             modifier = Modifier
                 .weight(1f)
-                .height(38.dp)
+                .height(36.dp)
                 .clip(RoundedCornerShape(19.dp))
                 .background(SubSurface)
                 .border(
@@ -433,33 +421,6 @@ private fun BrowserBar(
 }
 
 @Composable
-private fun BottomNav(
-    state: BrowserState,
-    onBack: () -> Unit,
-    onHome: () -> Unit,
-    onTabs: () -> Unit,
-    onMenu: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .windowInsetsPadding(WindowInsets.navigationBars)
-            .imePadding()
-            .padding(horizontal = 14.dp, vertical = 7.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        CircleButton("‹", onBack, enabled = state.canGoBack)
-        Spacer(Modifier.width(9.dp))
-        CircleButton("⌂", onHome, accent = true)
-        Spacer(Modifier.width(9.dp))
-        CircleButton("${state.session.tabs.size}", onTabs, accent = true)
-        Spacer(Modifier.width(9.dp))
-        CircleButton("⋮", onMenu)
-    }
-}
-
-@Composable
 private fun CircleButton(
     label: String,
     onClick: () -> Unit,
@@ -468,7 +429,7 @@ private fun CircleButton(
 ) {
     Box(
         modifier = Modifier
-            .size(34.dp)
+            .size(32.dp)
             .clip(CircleShape)
             .background(
                 if (accent) SubSaffron.copy(alpha = 0.11f)
@@ -495,7 +456,6 @@ private fun CircleButton(
 
 @Composable
 private fun StartPage(
-    onSearch: () -> Unit,
     onNewTab: () -> Unit,
     onPrivate: () -> Unit,
     onTabs: () -> Unit,
@@ -506,53 +466,31 @@ private fun StartPage(
             .fillMaxSize()
             .statusBarsPadding()
             .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(start = 18.dp, end = 18.dp, top = 88.dp, bottom = 66.dp),
+            .padding(start = 18.dp, end = 18.dp, top = 66.dp, bottom = 18.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.Bottom,
+            verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     "SUB",
                     color = SubSaffron,
-                    fontSize = 11.sp,
+                    fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = 2.sp,
+                    letterSpacing = 1.8.sp,
                 )
                 Text(
                     "Speed Dial",
                     color = SubTextPrimary,
-                    fontSize = 21.sp,
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
             }
             CircleButton("+", onNewTab, accent = true)
         }
 
-        Spacer(Modifier.height(17.dp))
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(42.dp)
-                .clip(RoundedCornerShape(21.dp))
-                .background(SubSurface)
-                .border(1.dp, SubSurfaceElevated, RoundedCornerShape(21.dp))
-                .clickable(onClick = onSearch)
-                .padding(horizontal = 13.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("⌕", color = SubSaffron, fontSize = 16.sp)
-            Spacer(Modifier.width(8.dp))
-            Text(
-                "Search or enter address",
-                color = SubTextSecondary,
-                fontSize = 12.sp,
-            )
-        }
-
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(16.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -563,19 +501,15 @@ private fun StartPage(
             StartTile("Tabs", "▣", onTabs, Modifier.weight(1f))
         }
 
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(12.dp))
 
-        Text(
-            "Quick access",
-            color = SubTextSecondary,
-            fontSize = 10.sp,
-        )
-
-        Spacer(Modifier.height(7.dp))
-
-        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             QuickPill("New tab", onNewTab)
             QuickPill("Private", onPrivate)
+            QuickPill("Bookmarks", onBookmarks)
             QuickPill("Tabs", onTabs)
         }
     }
