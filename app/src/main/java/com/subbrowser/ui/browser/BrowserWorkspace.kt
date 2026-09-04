@@ -20,12 +20,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.input.TextFieldLineLimits
-import androidx.compose.foundation.text.input.TextFieldState
-import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -38,14 +42,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.Text
 import com.subbrowser.browser.BrowserController
 import com.subbrowser.browser.model.BrowserState
 import com.subbrowser.browser.web.configureBrowserWebView
@@ -55,9 +59,20 @@ import com.subbrowser.ui.theme.SubSurface
 import com.subbrowser.ui.theme.SubTextPrimary
 import com.subbrowser.ui.theme.SubTextSecondary
 
-private val CanvasWhite = Color(0xFFF5F5F2)
-private val CanvasLine = Color(0xFF252525)
-private val CanvasMuted = Color(0xFF777777)
+private val BorderColor = Color(0xFF242424)
+private val CardBg = Color(0xFF141414)
+private val AccentColor = SubSaffron
+
+private data class QuickShortcut(val name: String, val url: String, val iconText: String)
+
+private val defaultShortcuts = listOf(
+    QuickShortcut("Google", "https://www.google.com", "G"),
+    QuickShortcut("YouTube", "https://www.youtube.com", "YT"),
+    QuickShortcut("GitHub", "https://www.github.com", "GH"),
+    QuickShortcut("Wikipedia", "https://www.wikipedia.org", "W"),
+    QuickShortcut("Reddit", "https://www.reddit.com", "R"),
+    QuickShortcut("Twitter", "https://www.x.com", "X")
+)
 
 @Composable
 fun BrowserWorkspace(
@@ -65,22 +80,34 @@ fun BrowserWorkspace(
 ) {
     var state by remember { mutableStateOf(BrowserState()) }
     var webViewEpoch by remember { mutableIntStateOf(0) }
-    var commandOpen by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
-    val command = rememberTextFieldState()
+    var urlText by remember { mutableStateOf("") }
+    val focusManager = LocalFocusManager.current
 
     DisposableEffect(controller) {
-        controller.observe { state = it }
+        controller.observe { newState ->
+            state = newState
+            if (newState.url != "about:blank" && newState.url != urlText) {
+                urlText = newState.url
+            }
+        }
         onDispose { controller.clearObserver() }
     }
 
-    BackHandler(enabled = commandOpen || menuOpen) {
-        commandOpen = false
+    BackHandler(enabled = menuOpen) {
         menuOpen = false
     }
 
-    BackHandler(enabled = !commandOpen && !menuOpen && state.canGoBack) {
+    BackHandler(enabled = !menuOpen && state.canGoBack) {
         controller.goBack()
+    }
+
+    val submitNavigation: (String) -> Unit = { query ->
+        val trimmed = query.trim()
+        if (trimmed.isNotEmpty()) {
+            focusManager.clearFocus()
+            controller.navigate(trimmed)
+        }
     }
 
     Box(
@@ -88,447 +115,347 @@ fun BrowserWorkspace(
             .fillMaxSize()
             .background(SubBlack)
     ) {
-        key(webViewEpoch) {
-            AndroidView(
-                factory = { context ->
-                    WebView(context).also {
-                        configureBrowserWebView(it, controller)
-                    }
-                },
-                modifier = Modifier.fillMaxSize(),
-                update = { controller.syncForUi() },
-                onRelease = { controller.dispose(it) },
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Top URL & Search Bar
+            BrowserTopBar(
+                currentText = urlText,
+                isLoading = state.loading,
+                progress = state.progress,
+                onTextChange = { urlText = it },
+                onSubmit = { submitNavigation(urlText) },
+                onRefresh = {
+                    if (state.loading) controller.stop() else controller.reload()
+                }
             )
-        }
 
-        if (state.url == "about:blank") {
-            NewTabCanvas(
-                onSearch = { commandOpen = true },
-                onPrivate = {
-                    controller.newTab(isPrivate = true)
-                    webViewEpoch++
-                },
-                onTabs = { menuOpen = true },
-            )
-        }
+            // Main Web Content or Home Screen
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
+                key(webViewEpoch) {
+                    AndroidView(
+                        factory = { context ->
+                            WebView(context).also {
+                                configureBrowserWebView(it, controller)
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                        update = { controller.syncForUi() },
+                        onRelease = { controller.dispose(it) },
+                    )
+                }
 
-        if (state.url != "about:blank") {
-            PageHud(
-                state = state,
-                onCommand = { commandOpen = true },
+                if (state.url == "about:blank") {
+                    BrowserHomeScreen(
+                        onShortcutClick = { targetUrl ->
+                            urlText = targetUrl
+                            submitNavigation(targetUrl)
+                        }
+                    )
+                }
+            }
+
+            // Bottom Navigation Toolbar
+            BrowserBottomBar(
+                canGoBack = state.canGoBack,
+                canGoForward = state.canGoForward,
+                tabCount = state.tabs.size.coerceAtLeast(1),
                 onBack = controller::goBack,
                 onForward = controller::goForward,
-                onReload = {
-                    if (state.loading) controller.stop() else controller.reload()
+                onHome = {
+                    controller.navigate("about:blank")
+                    urlText = ""
                 },
-                onMenu = { menuOpen = true },
-            )
-        } else {
-            MinimalHud(
-                onCommand = { commandOpen = true },
-                onMenu = { menuOpen = true },
+                onTabs = { menuOpen = true },
+                onMenu = { menuOpen = true }
             )
         }
 
-        if (commandOpen) {
-            CommandSheet(
-                state = command,
-                onClose = { commandOpen = false },
-                onSubmit = {
-                    val value = command.text.toString().trim()
-                    if (value.isNotEmpty()) {
-                        controller.navigate(value)
-                        command.edit { replace(0, length, "") }
-                        commandOpen = false
-                    }
-                },
-            )
-        }
-
+        // Popup Menu
         if (menuOpen) {
-            MenuSheet(
+            BrowserActionMenu(
                 onClose = { menuOpen = false },
-                onNew = {
+                onNewTab = {
                     controller.newTab()
-                    menuOpen = false
+                    urlText = ""
                     webViewEpoch++
+                    menuOpen = false
                 },
-                onPrivate = {
+                onPrivateTab = {
                     controller.newTab(isPrivate = true)
-                    menuOpen = false
+                    urlText = ""
                     webViewEpoch++
+                    menuOpen = false
                 },
                 onReload = {
                     controller.reload()
                     menuOpen = false
-                },
+                }
             )
         }
     }
 }
 
 @Composable
-private fun NewTabCanvas(
-    onSearch: () -> Unit,
-    onPrivate: () -> Unit,
-    onTabs: () -> Unit,
+private fun BrowserTopBar(
+    currentText: String,
+    isLoading: Boolean,
+    progress: Int,
+    onTextChange: (String) -> Unit,
+    onSubmit: () -> Unit,
+    onRefresh: () -> Unit
 ) {
     Column(
         modifier = Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
+            .background(SubBlack)
             .windowInsetsPadding(WindowInsets.statusBars)
-            .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(horizontal = 22.dp, vertical = 24.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
-        Spacer(Modifier.weight(1f))
-
-        Text(
-            "SUB",
-            color = SubSaffron,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 4.sp,
-        )
-
-        Spacer(Modifier.height(6.dp))
-
-        Text(
-            "Browse without the clutter.",
-            color = CanvasWhite,
-            fontSize = 22.sp,
-            fontWeight = FontWeight.SemiBold,
-        )
-
-        Spacer(Modifier.height(7.dp))
-
-        Text(
-            "One surface. Your pages. Nothing unnecessary.",
-            color = SubTextSecondary,
-            fontSize = 10.sp,
-        )
-
-        Spacer(Modifier.height(22.dp))
-
-        CommandBar(
-            hint = "Search or enter address",
-            onClick = onSearch,
-        )
-
-        Spacer(Modifier.height(11.dp))
-
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(46.dp)
+                .clip(RoundedCornerShape(23.dp))
+                .background(SubSurface)
+                .border(1.dp, BorderColor, RoundedCornerShape(23.dp))
+                .padding(horizontal = 14.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            SmallAction("PRIVATE", "P", onPrivate, Modifier.weight(1f))
-            SmallAction("TABS", "□", onTabs, Modifier.weight(1f))
+            Text(
+                text = if (currentText.startsWith("https://")) "🔒" else "🌐",
+                fontSize = 13.sp,
+                modifier = Modifier.padding(end = 8.dp)
+            )
+
+            BasicTextField(
+                value = currentText,
+                onValueChange = onTextChange,
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                textStyle = TextStyle(color = SubTextPrimary, fontSize = 14.sp),
+                cursorBrush = SolidColor(AccentColor),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                keyboardActions = KeyboardActions(onGo = { onSubmit() }),
+                decorationBox = { innerTextField ->
+                    if (currentText.isEmpty()) {
+                        Text("Search or enter web address...", color = SubTextSecondary, fontSize = 13.sp)
+                    }
+                    innerTextField()
+                }
+            )
+
+            Text(
+                text = if (isLoading) "✕" else "↻",
+                color = SubTextSecondary,
+                fontSize = 15.sp,
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable(onClick = onRefresh)
+                    .padding(6.dp)
+            )
         }
 
-        Spacer(Modifier.weight(1f))
-
-        Text(
-            "SUB BROWSER",
-            color = CanvasMuted,
-            fontSize = 8.sp,
-            letterSpacing = 2.sp,
-        )
+        if (isLoading) {
+            LinearProgressIndicator(
+                progress = { (progress.coerceIn(5, 100)) / 100f },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp)
+                    .height(2.dp),
+                color = AccentColor,
+                trackColor = Color.Transparent
+            )
+        }
     }
 }
 
 @Composable
-private fun CommandBar(
-    hint: String,
-    onClick: () -> Unit,
+private fun BrowserHomeScreen(
+    onShortcutClick: (String) -> Unit
 ) {
-    Row(
+    Column(
         modifier = Modifier
-            .fillMaxWidth()
-            .height(44.dp)
-            .clip(RoundedCornerShape(22.dp))
-            .background(SubSurface)
-            .border(1.dp, CanvasLine, RoundedCornerShape(22.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .fillMaxSize()
+            .background(SubBlack)
+            .padding(horizontal = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
         Box(
             modifier = Modifier
-                .size(7.dp)
+                .size(54.dp)
                 .clip(CircleShape)
-                .background(SubSaffron)
-        )
-        Spacer(Modifier.width(9.dp))
-        Text(hint, color = SubTextSecondary, fontSize = 11.sp)
+                .background(SubSurface)
+                .border(1.dp, AccentColor, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Text("S", color = AccentColor, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        }
+
+        Spacer(Modifier.height(14.dp))
+        Text("Sub Browser", color = SubTextPrimary, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
+        Text("Fast, private and secure browsing", color = SubTextSecondary, fontSize = 12.sp)
+
+        Spacer(Modifier.height(32.dp))
+
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(4),
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp)
+        ) {
+            items(defaultShortcuts) { item ->
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { onShortcutClick(item.url) }
+                        .padding(vertical = 6.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(CardBg)
+                            .border(1.dp, BorderColor, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(item.iconText, color = SubTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(item.name, color = SubTextSecondary, fontSize = 11.sp, maxLines = 1)
+                }
+            }
+        }
     }
 }
 
 @Composable
-private fun SmallAction(
-    title: String,
-    symbol: String,
-    onClick: () -> Unit,
-    modifier: Modifier,
-) {
-    Row(
-        modifier = modifier
-            .height(40.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(SubSurface)
-            .border(1.dp, CanvasLine, RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 11.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-    ) {
-        Text(symbol, color = SubSaffron, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(7.dp))
-        Text(title, color = CanvasWhite, fontSize = 9.sp, letterSpacing = 1.sp)
-    }
-}
-
-@Composable
-private fun MinimalHud(
-    onCommand: () -> Unit,
-    onMenu: () -> Unit,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .windowInsetsPadding(WindowInsets.statusBars)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("S", color = SubSaffron, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.width(10.dp))
-        Box(Modifier.weight(1f))
-        HudButton("⌘", onCommand)
-        Spacer(Modifier.width(7.dp))
-        HudButton("⋮", onMenu)
-    }
-}
-
-@Composable
-private fun PageHud(
-    state: BrowserState,
-    onCommand: () -> Unit,
+private fun BrowserBottomBar(
+    canGoBack: Boolean,
+    canGoForward: Boolean,
+    tabCount: Int,
     onBack: () -> Unit,
     onForward: () -> Unit,
-    onReload: () -> Unit,
-    onMenu: () -> Unit,
+    onHome: () -> Unit,
+    onTabs: () -> Unit,
+    onMenu: () -> Unit
 ) {
-    Column(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .windowInsetsPadding(WindowInsets.statusBars)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .background(SubSurface)
+            .border(1.dp, BorderColor)
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceAround,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+        BottomBarIcon(icon = "◀", enabled = canGoBack, onClick = onBack)
+        BottomBarIcon(icon = "▶", enabled = canGoForward, onClick = onForward)
+        BottomBarIcon(icon = "⌂", enabled = true, onClick = onHome)
+
+        // Tab Counter
+        Box(
+            modifier = Modifier
+                .size(30.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .border(1.5.dp, SubTextPrimary, RoundedCornerShape(8.dp))
+                .clickable(onClick = onTabs),
+            contentAlignment = Alignment.Center
         ) {
-            HudButton("‹", onBack, enabled = state.canGoBack)
-            Spacer(Modifier.width(5.dp))
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(34.dp)
-                    .clip(RoundedCornerShape(17.dp))
-                    .background(Color(0xCC080808))
-                    .border(1.dp, CanvasLine, RoundedCornerShape(17.dp))
-                    .clickable(onClick = onCommand)
-                    .padding(horizontal = 12.dp),
-                contentAlignment = Alignment.CenterStart,
-            ) {
-                Text(
-                    state.title.ifBlank { state.url },
-                    color = CanvasWhite,
-                    fontSize = 10.sp,
-                    maxLines = 1,
-                )
-            }
-            Spacer(Modifier.width(5.dp))
-            HudButton("›", onForward, enabled = state.canGoForward)
-            Spacer(Modifier.width(5.dp))
-            HudButton(if (state.loading) "×" else "↻", onReload)
-            Spacer(Modifier.width(5.dp))
-            HudButton("⋮", onMenu)
+            Text(
+                text = tabCount.toString(),
+                color = SubTextPrimary,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
+
+        BottomBarIcon(icon = "⋮", enabled = true, onClick = onMenu)
     }
 }
 
 @Composable
-private fun HudButton(
-    text: String,
-    onClick: () -> Unit,
-    enabled: Boolean = true,
+private fun BottomBarIcon(
+    icon: String,
+    enabled: Boolean,
+    onClick: () -> Unit
 ) {
     Box(
         modifier = Modifier
-            .size(32.dp)
+            .size(42.dp)
             .clip(CircleShape)
-            .background(if (enabled) Color(0xCC080808) else Color(0x66080808))
-            .border(1.dp, if (enabled) CanvasLine else Color(0x33252525), CircleShape)
             .clickable(enabled = enabled, onClick = onClick),
-        contentAlignment = Alignment.Center,
+        contentAlignment = Alignment.Center
     ) {
         Text(
-            text,
-            color = if (enabled) CanvasWhite else CanvasMuted,
-            fontSize = 14.sp,
+            text = icon,
+            color = if (enabled) SubTextPrimary else Color(0xFF4A4A4A),
+            fontSize = 16.sp
         )
     }
 }
 
 @Composable
-private fun CommandSheet(
-    state: TextFieldState,
+private fun BrowserActionMenu(
     onClose: () -> Unit,
-    onSubmit: () -> Unit,
+    onNewTab: () -> Unit,
+    onPrivateTab: () -> Unit,
+    onReload: () -> Unit
 ) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xB8000000))
+            .background(Color(0x99000000))
             .clickable(onClick = onClose)
-            .padding(horizontal = 14.dp, vertical = 72.dp),
-        contentAlignment = Alignment.TopCenter,
+            .padding(bottom = 60.dp, end = 12.dp),
+        contentAlignment = Alignment.BottomEnd
     ) {
         Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(18.dp))
-                .background(Color(0xFF0C0C0C))
-                .border(1.dp, CanvasLine, RoundedCornerShape(18.dp))
-                .padding(12.dp)
-                .clickable(enabled = false, onClick = {}),
+                .width(220.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(CardBg)
+                .border(1.dp, BorderColor, RoundedCornerShape(16.dp))
+                .padding(8.dp)
+                .clickable(enabled = false, onClick = {})
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("COMMAND", color = SubSaffron, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-                Spacer(Modifier.weight(1f))
-                Text("×", color = CanvasWhite, fontSize = 18.sp, modifier = Modifier.clickable(onClick = onClose))
-            }
-
-            Spacer(Modifier.height(10.dp))
-
-            BasicTextField(
-                state = state,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(44.dp),
-                textStyle = TextStyle(color = CanvasWhite, fontSize = 12.sp),
-                lineLimits = TextFieldLineLimits.SingleLine,
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                decorator = { innerTextField ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(SubSurface)
-                            .border(1.dp, CanvasLine, RoundedCornerShape(12.dp))
-                            .padding(horizontal = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text("⌕", color = SubSaffron, fontSize = 14.sp)
-                        Spacer(Modifier.width(8.dp))
-                        Box(Modifier.weight(1f)) {
-                            if (state.text.isEmpty()) {
-                                Text("Search, address or command", color = SubTextSecondary, fontSize = 11.sp)
-                            }
-                            innerTextField()
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            "→",
-                            color = SubSaffron,
-                            fontSize = 16.sp,
-                            modifier = Modifier.clickable(onClick = onSubmit),
-                        )
-                    }
-                },
+            Text(
+                "MENU",
+                color = AccentColor,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
             )
-
-            Spacer(Modifier.height(10.dp))
-            Text("QUICK COMMANDS", color = CanvasMuted, fontSize = 8.sp, letterSpacing = 1.5.sp)
-            Spacer(Modifier.height(7.dp))
-            QuickLine("SEARCH WEB")
-            QuickLine("OPEN ADDRESS")
-            QuickLine("NEW PRIVATE SPACE")
-            QuickLine("TABS")
+            ActionMenuItem(icon = "＋", title = "New Tab", onClick = onNewTab)
+            ActionMenuItem(icon = "🕶", title = "Private Space", onClick = onPrivateTab)
+            ActionMenuItem(icon = "↻", title = "Reload Page", onClick = onReload)
+            ActionMenuItem(icon = "⭐", title = "Bookmarks", onClick = onClose)
+            ActionMenuItem(icon = "🕒", title = "History", onClick = onClose)
+            ActionMenuItem(icon = "⚙", title = "Settings", onClick = onClose)
         }
     }
 }
 
 @Composable
-private fun QuickLine(text: String) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(34.dp)
-            .padding(horizontal = 3.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(5.dp).clip(CircleShape).background(SubSaffron))
-        Spacer(Modifier.width(9.dp))
-        Text(text, color = CanvasWhite, fontSize = 9.sp, letterSpacing = 1.sp)
-    }
-}
-
-@Composable
-private fun MenuSheet(
-    onClose: () -> Unit,
-    onNew: () -> Unit,
-    onPrivate: () -> Unit,
-    onReload: () -> Unit,
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xB8000000))
-            .clickable(onClick = onClose)
-            .padding(horizontal = 14.dp, vertical = 70.dp),
-        contentAlignment = Alignment.TopEnd,
-    ) {
-        Column(
-            modifier = Modifier
-                .width(240.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(Color(0xFF0C0C0C))
-                .border(1.dp, CanvasLine, RoundedCornerShape(18.dp))
-                .padding(10.dp)
-                .clickable(enabled = false, onClick = {}),
-        ) {
-            Text("SUB", color = SubSaffron, fontSize = 9.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
-            Spacer(Modifier.height(7.dp))
-            MenuItem("NEW TAB", onNew)
-            MenuItem("PRIVATE SPACE", onPrivate)
-            MenuItem("RELOAD", onReload)
-            MenuItem("HISTORY", {})
-            MenuItem("BOOKMARKS", {})
-            MenuItem("DOWNLOADS", {})
-            MenuItem("PRIVACY", {})
-            MenuItem("SETTINGS", {})
-            Spacer(Modifier.height(4.dp))
-            Text("v0.1 • browser workspace", color = CanvasMuted, fontSize = 8.sp)
-        }
-    }
-}
-
-@Composable
-private fun MenuItem(
-    text: String,
-    onClick: () -> Unit,
+private fun ActionMenuItem(
+    icon: String,
+    title: String,
+    onClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(38.dp)
-            .clip(RoundedCornerShape(9.dp))
+            .clip(RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(Modifier.size(5.dp).clip(CircleShape).background(SubSaffron))
-        Spacer(Modifier.width(9.dp))
-        Text(text, color = CanvasWhite, fontSize = 9.sp, letterSpacing = 1.sp)
+        Text(icon, fontSize = 14.sp, modifier = Modifier.width(24.dp))
+        Text(title, color = SubTextPrimary, fontSize = 13.sp)
     }
 }
