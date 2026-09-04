@@ -414,11 +414,11 @@ private fun CommandSheet(
                 state = state,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(44.dp)
+                    .height(44.dp),
                 textStyle = TextStyle(color = CanvasWhite, fontSize = 12.sp),
                 lineLimits = TextFieldLineLimits.SingleLine,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                decorator = { inner ->
+                decorator = { innerTextField ->
                     Row(
                         modifier = Modifier
                             .fillMaxSize()
@@ -434,8 +434,9 @@ private fun CommandSheet(
                             if (state.text.isEmpty()) {
                                 Text("Search, address or command", color = SubTextSecondary, fontSize = 11.sp)
                             }
-                            inner()
+                            innerTextField()
                         }
+                        Spacer(Modifier.width(8.dp))
                         Text(
                             "→",
                             color = SubSaffron,
