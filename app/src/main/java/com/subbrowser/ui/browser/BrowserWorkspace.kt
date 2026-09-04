@@ -59,8 +59,8 @@ import com.subbrowser.ui.theme.SubSurface
 import com.subbrowser.ui.theme.SubTextPrimary
 import com.subbrowser.ui.theme.SubTextSecondary
 
-private val BorderColor = Color(0xFF242424)
-private val CardBg = Color(0xFF141414)
+private val BorderColor = Color(0xFF2A2A2A)
+private val CardBg = Color(0xFF161616)
 private val AccentColor = SubSaffron
 
 private data class QuickShortcut(val name: String, val url: String, val iconText: String)
@@ -87,7 +87,7 @@ fun BrowserWorkspace(
     DisposableEffect(controller) {
         controller.observe { newState ->
             state = newState
-            if (newState.url != "about:blank" && newState.url != urlText) {
+            if (newState.url != "about:blank" && newState.url.isNotBlank()) {
                 urlText = newState.url
             }
         }
@@ -102,11 +102,19 @@ fun BrowserWorkspace(
         controller.goBack()
     }
 
-    val submitNavigation: (String) -> Unit = { query ->
-        val trimmed = query.trim()
+    val submitNavigation: (String) -> Unit = { rawQuery ->
+        val trimmed = rawQuery.trim()
         if (trimmed.isNotEmpty()) {
             focusManager.clearFocus()
-            controller.navigate(trimmed)
+            val target = if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+                trimmed
+            } else if (trimmed.contains(".") && !trimmed.contains(" ")) {
+                "https://$trimmed"
+            } else {
+                "https://www.google.com/search?q=${trimmed.replace(" ", "+")}"
+            }
+            urlText = target
+            controller.navigate(target)
         }
     }
 
@@ -116,6 +124,7 @@ fun BrowserWorkspace(
             .background(SubBlack)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
+            // Top URL bar with proper status bar padding
             BrowserTopBar(
                 currentText = urlText,
                 isLoading = state.loading,
@@ -127,6 +136,7 @@ fun BrowserWorkspace(
                 }
             )
 
+            // Web Content or Home Screen
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -145,7 +155,7 @@ fun BrowserWorkspace(
                     )
                 }
 
-                if (state.url == "about:blank") {
+                if (state.url == "about:blank" || state.url.isBlank()) {
                     BrowserHomeScreen(
                         onShortcutClick = { targetUrl ->
                             urlText = targetUrl
@@ -155,6 +165,7 @@ fun BrowserWorkspace(
                 }
             }
 
+            // Bottom Navigation Toolbar
             BrowserBottomBar(
                 canGoBack = state.canGoBack,
                 canGoForward = state.canGoForward,
@@ -208,22 +219,22 @@ private fun BrowserTopBar(
             .fillMaxWidth()
             .background(SubBlack)
             .windowInsetsPadding(WindowInsets.statusBars)
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .padding(horizontal = 14.dp, vertical = 10.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(46.dp)
-                .clip(RoundedCornerShape(23.dp))
+                .height(48.dp)
+                .clip(RoundedCornerShape(24.dp))
                 .background(SubSurface)
-                .border(1.dp, BorderColor, RoundedCornerShape(23.dp))
+                .border(1.dp, BorderColor, RoundedCornerShape(24.dp))
                 .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = if (currentText.startsWith("https://")) "🔒" else "🌐",
-                fontSize = 13.sp,
-                modifier = Modifier.padding(end = 8.dp)
+                text = if (currentText.startsWith("https://")) "🔒" else "🔍",
+                fontSize = 14.sp,
+                modifier = Modifier.padding(end = 10.dp)
             )
 
             BasicTextField(
@@ -237,7 +248,7 @@ private fun BrowserTopBar(
                 keyboardActions = KeyboardActions(onGo = { onSubmit() }),
                 decorationBox = { innerTextField ->
                     if (currentText.isEmpty()) {
-                        Text("Search or enter web address...", color = SubTextSecondary, fontSize = 13.sp)
+                        Text("Search or enter web address", color = SubTextSecondary, fontSize = 13.sp)
                     }
                     innerTextField()
                 }
@@ -246,7 +257,7 @@ private fun BrowserTopBar(
             Text(
                 text = if (isLoading) "✕" else "↻",
                 color = SubTextSecondary,
-                fontSize = 15.sp,
+                fontSize = 16.sp,
                 modifier = Modifier
                     .clip(CircleShape)
                     .clickable(onClick = onRefresh)
@@ -260,7 +271,7 @@ private fun BrowserTopBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 4.dp)
-                    .height(2.dp),
+                    .height(2.5.dp),
                 color = AccentColor,
                 trackColor = Color.Transparent
             )
@@ -278,30 +289,32 @@ private fun BrowserHomeScreen(
             .background(SubBlack)
             .padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        verticalArrangement = Arrangement.Top
     ) {
+        Spacer(Modifier.height(50.dp))
+
         Box(
             modifier = Modifier
-                .size(54.dp)
+                .size(60.dp)
                 .clip(CircleShape)
                 .background(SubSurface)
-                .border(1.dp, AccentColor, CircleShape),
+                .border(1.5.dp, AccentColor, CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Text("S", color = AccentColor, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text("S", color = AccentColor, fontSize = 26.sp, fontWeight = FontWeight.Bold)
         }
 
         Spacer(Modifier.height(14.dp))
-        Text("Sub Browser", color = SubTextPrimary, fontSize = 20.sp, fontWeight = FontWeight.SemiBold)
-        Text("Fast, private and secure browsing", color = SubTextSecondary, fontSize = 12.sp)
+        Text("Sub Browser", color = SubTextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Text("Fast, private and secure browsing", color = SubTextSecondary, fontSize = 13.sp)
 
-        Spacer(Modifier.height(32.dp))
+        Spacer(Modifier.height(40.dp))
 
         LazyVerticalGrid(
             columns = GridCells.Fixed(4),
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp)
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
             items(defaultShortcuts) { item ->
                 Column(
@@ -309,20 +322,20 @@ private fun BrowserHomeScreen(
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
                         .clickable { onShortcutClick(item.url) }
-                        .padding(vertical = 6.dp)
+                        .padding(vertical = 4.dp)
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(48.dp)
+                            .size(50.dp)
                             .clip(CircleShape)
                             .background(CardBg)
                             .border(1.dp, BorderColor, CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(item.iconText, color = SubTextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                        Text(item.iconText, color = SubTextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     }
                     Spacer(Modifier.height(6.dp))
-                    Text(item.name, color = SubTextSecondary, fontSize = 11.sp, maxLines = 1)
+                    Text(item.name, color = SubTextSecondary, fontSize = 12.sp, maxLines = 1)
                 }
             }
         }
@@ -346,7 +359,7 @@ private fun BrowserBottomBar(
             .background(SubSurface)
             .border(1.dp, BorderColor)
             .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(horizontal = 8.dp, vertical = 6.dp),
+            .padding(horizontal = 10.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceAround,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -356,7 +369,7 @@ private fun BrowserBottomBar(
 
         Box(
             modifier = Modifier
-                .size(30.dp)
+                .size(32.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .border(1.5.dp, SubTextPrimary, RoundedCornerShape(8.dp))
                 .clickable(onClick = onTabs),
@@ -365,7 +378,7 @@ private fun BrowserBottomBar(
             Text(
                 text = tabCount.toString(),
                 color = SubTextPrimary,
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Bold
             )
         }
@@ -390,7 +403,7 @@ private fun BottomBarIcon(
         Text(
             text = icon,
             color = if (enabled) SubTextPrimary else Color(0xFF4A4A4A),
-            fontSize = 16.sp
+            fontSize = 18.sp
         )
     }
 }
@@ -407,12 +420,12 @@ private fun BrowserActionMenu(
             .fillMaxSize()
             .background(Color(0x99000000))
             .clickable(onClick = onClose)
-            .padding(bottom = 60.dp, end = 12.dp),
+            .padding(bottom = 68.dp, end = 12.dp),
         contentAlignment = Alignment.BottomEnd
     ) {
         Column(
             modifier = Modifier
-                .width(220.dp)
+                .width(230.dp)
                 .clip(RoundedCornerShape(16.dp))
                 .background(CardBg)
                 .border(1.dp, BorderColor, RoundedCornerShape(16.dp))
@@ -422,7 +435,7 @@ private fun BrowserActionMenu(
             Text(
                 "MENU",
                 color = AccentColor,
-                fontSize = 10.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
             )
@@ -450,7 +463,7 @@ private fun ActionMenuItem(
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(icon, fontSize = 14.sp, modifier = Modifier.width(24.dp))
+        Text(icon, fontSize = 15.sp, modifier = Modifier.width(26.dp))
         Text(title, color = SubTextPrimary, fontSize = 13.sp)
     }
 }
