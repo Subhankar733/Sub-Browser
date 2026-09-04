@@ -149,6 +149,7 @@ fun BrowserWorkspace(
 
             if (state.url == "about:blank" && panel == Panel.NONE) {
                 StartPage(
+                    onSearch = { panel = Panel.SEARCH },
                     onNewTab = {
                         controller.newTab()
                         webViewVersion++
@@ -180,6 +181,17 @@ fun BrowserWorkspace(
                 )
             }
 
+            if (panel == Panel.NONE) {
+                BottomNav(
+                    state = state,
+                    onBack = controller::goBack,
+                    onHome = {
+                        if (state.url != "about:blank") controller.navigate("about:blank")
+                    },
+                    onTabs = { panel = Panel.TABS },
+                    onMenu = { panel = Panel.MENU },
+                )
+            }
         }
 
         when (panel) {
@@ -339,7 +351,7 @@ private fun BrowserBar(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 10.dp, vertical = 6.dp),
+            .padding(horizontal = 9.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         CircleButton("S", onEdit, accent = true)
@@ -349,7 +361,7 @@ private fun BrowserBar(
         Row(
             modifier = Modifier
                 .weight(1f)
-                .height(36.dp)
+                .height(38.dp)
                 .clip(RoundedCornerShape(19.dp))
                 .background(SubSurface)
                 .border(
@@ -421,6 +433,33 @@ private fun BrowserBar(
 }
 
 @Composable
+private fun BottomNav(
+    state: BrowserState,
+    onBack: () -> Unit,
+    onHome: () -> Unit,
+    onTabs: () -> Unit,
+    onMenu: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .imePadding()
+            .padding(horizontal = 14.dp, vertical = 7.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CircleButton("‹", onBack, enabled = state.canGoBack)
+        Spacer(Modifier.width(9.dp))
+        CircleButton("⌂", onHome, accent = true)
+        Spacer(Modifier.width(9.dp))
+        CircleButton("${state.session.tabs.size}", onTabs, accent = true)
+        Spacer(Modifier.width(9.dp))
+        CircleButton("⋮", onMenu)
+    }
+}
+
+@Composable
 private fun CircleButton(
     label: String,
     onClick: () -> Unit,
@@ -429,7 +468,7 @@ private fun CircleButton(
 ) {
     Box(
         modifier = Modifier
-            .size(32.dp)
+            .size(34.dp)
             .clip(CircleShape)
             .background(
                 if (accent) SubSaffron.copy(alpha = 0.11f)
@@ -456,6 +495,7 @@ private fun CircleButton(
 
 @Composable
 private fun StartPage(
+    onSearch: () -> Unit,
     onNewTab: () -> Unit,
     onPrivate: () -> Unit,
     onTabs: () -> Unit,
@@ -466,7 +506,7 @@ private fun StartPage(
             .fillMaxSize()
             .statusBarsPadding()
             .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(start = 18.dp, end = 18.dp, top = 66.dp, bottom = 18.dp),
+            .padding(horizontal = 16.dp, top = 78.dp, bottom = 58.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -476,88 +516,123 @@ private fun StartPage(
                 Text(
                     "SUB",
                     color = SubSaffron,
-                    fontSize = 10.sp,
+                    fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.8.sp,
+                    letterSpacing = 2.sp,
                 )
                 Text(
                     "Speed Dial",
                     color = SubTextPrimary,
-                    fontSize = 20.sp,
+                    fontSize = 19.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
             }
+
             CircleButton("+", onNewTab, accent = true)
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(13.dp))
 
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(38.dp)
+                .clip(RoundedCornerShape(19.dp))
+                .background(SubSurface)
+                .border(1.dp, SubSurfaceElevated, RoundedCornerShape(19.dp))
+                .clickable(onClick = onSearch)
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            StartTile("Private", "P", onPrivate, Modifier.weight(1f))
-            StartTile("Bookmarks", "★", onBookmarks, Modifier.weight(1f))
-            StartTile("Tabs", "▣", onTabs, Modifier.weight(1f))
+            Text("⌕", color = SubSaffron, fontSize = 15.sp)
+            Spacer(Modifier.width(7.dp))
+            Text(
+                "Search or enter address",
+                color = SubTextSecondary,
+                fontSize = 11.sp,
+            )
         }
 
         Spacer(Modifier.height(12.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
         ) {
-            QuickPill("New tab", onNewTab)
-            QuickPill("Private", onPrivate)
-            QuickPill("Bookmarks", onBookmarks)
-            QuickPill("Tabs", onTabs)
+            CompactAction("P", "Private", onPrivate, Modifier.weight(1f))
+            CompactAction("★", "Bookmarks", onBookmarks, Modifier.weight(1f))
+            CompactAction("▣", "Tabs", onTabs, Modifier.weight(1f))
+            CompactAction("+", "New tab", onNewTab, Modifier.weight(1f))
         }
+
+        Spacer(Modifier.height(18.dp))
+
+        Text(
+            "Your space",
+            color = SubTextSecondary,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium,
+        )
+
+        Spacer(Modifier.height(5.dp))
+
+        Text(
+            "Open a page to begin",
+            color = SubTextPrimary,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+        )
+
+        Spacer(Modifier.height(3.dp))
+
+        Text(
+            "Your tabs, history and tools stay out of the way.",
+            color = SubTextSecondary,
+            fontSize = 10.sp,
+        )
     }
 }
 
 @Composable
-private fun StartTile(
-    title: String,
+private fun CompactAction(
     symbol: String,
+    title: String,
     onClick: () -> Unit,
     modifier: Modifier,
 ) {
-    Column(
+    Row(
         modifier = modifier
-            .height(82.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .height(42.dp)
+            .clip(RoundedCornerShape(11.dp))
             .background(SubSurface)
-            .border(1.dp, SubSurfaceElevated, RoundedCornerShape(12.dp))
+            .border(1.dp, SubSurfaceElevated, RoundedCornerShape(11.dp))
             .clickable(onClick = onClick)
-            .padding(9.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
     ) {
         Box(
             modifier = Modifier
-                .size(28.dp)
+                .size(23.dp)
                 .clip(CircleShape)
                 .background(SubSurfaceElevated),
             contentAlignment = Alignment.Center,
         ) {
-            Text(symbol, color = SubSaffron, fontSize = 12.sp)
+            Text(
+                symbol,
+                color = SubSaffron,
+                fontSize = if (symbol == "★") 10.sp else 11.sp,
+            )
         }
-        Spacer(Modifier.height(5.dp))
-        Text(title, color = SubTextPrimary, fontSize = 10.sp)
-    }
-}
 
-@Composable
-private fun QuickPill(label: String, onClick: () -> Unit) {
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(9.dp))
-            .background(SubSurface)
-            .border(1.dp, SubSurfaceElevated, RoundedCornerShape(9.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 9.dp, vertical = 6.dp),
-    ) {
-        Text(label, color = SubTextSecondary, fontSize = 10.sp)
+        Spacer(Modifier.width(5.dp))
+
+        Text(
+            title,
+            color = SubTextPrimary,
+            fontSize = 9.sp,
+            maxLines = 1,
+        )
     }
 }
 
