@@ -59,8 +59,8 @@ import com.subbrowser.ui.theme.SubSurface
 import com.subbrowser.ui.theme.SubTextPrimary
 import com.subbrowser.ui.theme.SubTextSecondary
 
-private val BorderColor = Color(0xFF2A2A2A)
-private val CardBg = Color(0xFF161616)
+private val BorderColor = Color(0xFF2C2C2E)
+private val CardBg = Color(0xFF1C1C1E)
 private val AccentColor = SubSaffron
 
 private data class QuickShortcut(val name: String, val url: String, val iconText: String)
@@ -122,9 +122,10 @@ fun BrowserWorkspace(
         modifier = Modifier
             .fillMaxSize()
             .background(SubBlack)
+            .windowInsetsPadding(WindowInsets.statusBars)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Top URL bar with proper status bar padding
+            // ওপরে ব্রাউজার অ্যাড্রেস বার
             BrowserTopBar(
                 currentText = urlText,
                 isLoading = state.loading,
@@ -136,7 +137,7 @@ fun BrowserWorkspace(
                 }
             )
 
-            // Web Content or Home Screen
+            // মেইন ওয়েবভিউ অথবা হোম পেজ
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -157,6 +158,9 @@ fun BrowserWorkspace(
 
                 if (state.url == "about:blank" || state.url.isBlank()) {
                     BrowserHomeScreen(
+                        searchQuery = urlText,
+                        onSearchChange = { urlText = it },
+                        onSearchSubmit = { submitNavigation(urlText) },
                         onShortcutClick = { targetUrl ->
                             urlText = targetUrl
                             submitNavigation(targetUrl)
@@ -165,7 +169,7 @@ fun BrowserWorkspace(
                 }
             }
 
-            // Bottom Navigation Toolbar
+            // নিচে মোবাইল ব্রাউজার নেভিগেশন বার
             BrowserBottomBar(
                 canGoBack = state.canGoBack,
                 canGoForward = state.canGoForward,
@@ -181,6 +185,7 @@ fun BrowserWorkspace(
             )
         }
 
+        // সাইড মেনু
         if (menuOpen) {
             BrowserActionMenu(
                 onClose = { menuOpen = false },
@@ -217,8 +222,7 @@ private fun BrowserTopBar(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(SubBlack)
-            .windowInsetsPadding(WindowInsets.statusBars)
+            .background(SubSurface)
             .padding(horizontal = 14.dp, vertical = 10.dp)
     ) {
         Row(
@@ -226,14 +230,14 @@ private fun BrowserTopBar(
                 .fillMaxWidth()
                 .height(48.dp)
                 .clip(RoundedCornerShape(24.dp))
-                .background(SubSurface)
+                .background(CardBg)
                 .border(1.dp, BorderColor, RoundedCornerShape(24.dp))
                 .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = if (currentText.startsWith("https://")) "🔒" else "🔍",
-                fontSize = 14.sp,
+                text = if (currentText.startsWith("https://")) "🔒" else "🌐",
+                fontSize = 15.sp,
                 modifier = Modifier.padding(end = 10.dp)
             )
 
@@ -248,7 +252,7 @@ private fun BrowserTopBar(
                 keyboardActions = KeyboardActions(onGo = { onSubmit() }),
                 decorationBox = { innerTextField ->
                     if (currentText.isEmpty()) {
-                        Text("Search or enter web address", color = SubTextSecondary, fontSize = 13.sp)
+                        Text("Search or enter web address...", color = SubTextSecondary, fontSize = 13.sp)
                     }
                     innerTextField()
                 }
@@ -281,6 +285,9 @@ private fun BrowserTopBar(
 
 @Composable
 private fun BrowserHomeScreen(
+    searchQuery: String,
+    onSearchChange: (String) -> Unit,
+    onSearchSubmit: () -> Unit,
     onShortcutClick: (String) -> Unit
 ) {
     Column(
@@ -291,25 +298,58 @@ private fun BrowserHomeScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Top
     ) {
-        Spacer(Modifier.height(50.dp))
+        Spacer(Modifier.height(40.dp))
 
         Box(
             modifier = Modifier
-                .size(60.dp)
+                .size(68.dp)
                 .clip(CircleShape)
-                .background(SubSurface)
-                .border(1.5.dp, AccentColor, CircleShape),
+                .background(CardBg)
+                .border(2.dp, AccentColor, CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Text("S", color = AccentColor, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+            Text("S", color = AccentColor, fontSize = 28.sp, fontWeight = FontWeight.Bold)
         }
 
         Spacer(Modifier.height(14.dp))
         Text("Sub Browser", color = SubTextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Bold)
-        Text("Fast, private and secure browsing", color = SubTextSecondary, fontSize = 13.sp)
+        Text("Fast, private and secure browsing", color = SubTextSecondary, fontSize = 12.sp)
 
-        Spacer(Modifier.height(40.dp))
+        Spacer(Modifier.height(30.dp))
 
+        // সেন্ট্রাল সার্চ বক্স (Chrome এর মত)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+                .clip(RoundedCornerShape(26.dp))
+                .background(CardBg)
+                .border(1.dp, BorderColor, RoundedCornerShape(26.dp))
+                .padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("🔍", fontSize = 16.sp, modifier = Modifier.padding(end = 10.dp))
+            BasicTextField(
+                value = searchQuery,
+                onValueChange = onSearchChange,
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                textStyle = TextStyle(color = SubTextPrimary, fontSize = 15.sp),
+                cursorBrush = SolidColor(AccentColor),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { onSearchSubmit() }),
+                decorationBox = { innerTextField ->
+                    if (searchQuery.isEmpty()) {
+                        Text("Search Google or type a URL", color = SubTextSecondary, fontSize = 14.sp)
+                    }
+                    innerTextField()
+                }
+            )
+        }
+
+        Spacer(Modifier.height(36.dp))
+
+        // শর্টকাট গ্রিড
         LazyVerticalGrid(
             columns = GridCells.Fixed(4),
             modifier = Modifier.fillMaxWidth(),
@@ -326,13 +366,13 @@ private fun BrowserHomeScreen(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(50.dp)
+                            .size(52.dp)
                             .clip(CircleShape)
                             .background(CardBg)
                             .border(1.dp, BorderColor, CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(item.iconText, color = SubTextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                        Text(item.iconText, color = SubTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
                     }
                     Spacer(Modifier.height(6.dp))
                     Text(item.name, color = SubTextSecondary, fontSize = 12.sp, maxLines = 1)
