@@ -176,12 +176,10 @@ fun BrowserWorkspace(
                         address.edit { replace(0, length, "") }
                         panel = Panel.NONE
                     },
-                    onTabs = { panel = Panel.TABS },
-                    onMenu = { panel = Panel.MENU },
                 )
             }
 
-            if (panel == Panel.NONE) {
+            if (panel == Panel.NONE && state.url != "about:blank") {
                 BottomNav(
                     state = state,
                     onBack = controller::goBack,
@@ -337,8 +335,6 @@ private fun BrowserBar(
     onEdit: () -> Unit,
     onCancel: () -> Unit,
     onSubmit: () -> Unit,
-    onTabs: () -> Unit,
-    onMenu: () -> Unit,
 ) {
     val title = when {
         editing -> "Search or enter address"
@@ -347,36 +343,37 @@ private fun BrowserBar(
         else -> "Search or enter address"
     }
 
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 9.dp, vertical = 7.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(top = 7.dp, start = 28.dp, end = 28.dp),
+        contentAlignment = Alignment.TopCenter,
     ) {
-        CircleButton("S", onEdit, accent = true)
-
-        Spacer(Modifier.width(6.dp))
-
         Row(
             modifier = Modifier
-                .weight(1f)
-                .height(38.dp)
-                .clip(RoundedCornerShape(19.dp))
-                .background(SubSurface)
+                .fillMaxWidth(if (editing) 0.90f else 0.72f)
+                .height(if (editing) 42.dp else 34.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .background(SubBlack.copy(alpha = 0.88f))
                 .border(
                     1.dp,
-                    if (editing) SubSaffron.copy(alpha = 0.55f) else SubSurfaceElevated,
-                    RoundedCornerShape(19.dp),
+                    if (editing) SubSaffron.copy(alpha = 0.55f)
+                    else SubSurfaceElevated,
+                    RoundedCornerShape(18.dp),
                 )
                 .clickable(onClick = onEdit)
                 .padding(horizontal = 11.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                if (state.secureConnection) "●" else "○",
-                color = if (state.secureConnection) SubSaffron else SubTextSecondary,
-                fontSize = 7.sp,
+            Box(
+                modifier = Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(
+                        if (state.secureConnection) SubSaffron
+                        else SubTextSecondary.copy(alpha = 0.65f)
+                    ),
             )
             Spacer(Modifier.width(7.dp))
 
@@ -397,14 +394,13 @@ private fun BrowserBar(
                             Text(
                                 title,
                                 color = SubTextSecondary,
-                                fontSize = 12.sp,
+                                fontSize = 11.sp,
                                 maxLines = 1,
                             )
                         }
                         inner()
                     },
                 )
-
                 Text(
                     "×",
                     color = SubTextSecondary,
@@ -418,17 +414,20 @@ private fun BrowserBar(
                     title,
                     color = if (state.title.isNotBlank() && state.title != "New Tab")
                         SubTextPrimary else SubTextSecondary,
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     maxLines = 1,
                     modifier = Modifier.weight(1f),
                 )
+                if (state.session.tabs.size > 1) {
+                    Text(
+                        "${state.session.tabs.size}",
+                        color = SubSaffron,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
             }
         }
-
-        Spacer(Modifier.width(6.dp))
-        CircleButton("${state.session.tabs.size}", onTabs, accent = true)
-        Spacer(Modifier.width(5.dp))
-        CircleButton("⋮", onMenu)
     }
 }
 
@@ -440,22 +439,55 @@ private fun BottomNav(
     onTabs: () -> Unit,
     onMenu: () -> Unit,
 ) {
-    Row(
+    Box(
         modifier = Modifier
-            .fillMaxWidth()
+            .fillMaxSize()
             .windowInsetsPadding(WindowInsets.navigationBars)
-            .imePadding()
-            .padding(horizontal = 14.dp, vertical = 7.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(bottom = 7.dp),
+        contentAlignment = Alignment.BottomCenter,
     ) {
-        CircleButton("‹", onBack, enabled = state.canGoBack)
-        Spacer(Modifier.width(9.dp))
-        CircleButton("⌂", onHome, accent = true)
-        Spacer(Modifier.width(9.dp))
-        CircleButton("${state.session.tabs.size}", onTabs, accent = true)
-        Spacer(Modifier.width(9.dp))
-        CircleButton("⋮", onMenu)
+        Row(
+            modifier = Modifier
+                .height(34.dp)
+                .clip(RoundedCornerShape(17.dp))
+                .background(SubBlack.copy(alpha = 0.82f))
+                .border(1.dp, SubSurfaceElevated, RoundedCornerShape(17.dp))
+                .padding(horizontal = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            DockButton("‹", onBack, enabled = state.canGoBack)
+            DockButton("⌂", onHome)
+            DockButton("${state.session.tabs.size}", onTabs, accent = true)
+            DockButton("⋯", onMenu)
+        }
+    }
+}
+
+@Composable
+private fun DockButton(
+    label: String,
+    onClick: () -> Unit,
+    enabled: Boolean = true,
+    accent: Boolean = false,
+) {
+    Box(
+        modifier = Modifier
+            .size(27.dp)
+            .clip(CircleShape)
+            .background(
+                if (accent) SubSaffron.copy(alpha = 0.10f)
+                else SubBlack.copy(alpha = 0.15f),
+            )
+            .alpha(if (enabled) 1f else 0.25f)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            label,
+            color = if (accent) SubSaffron else SubTextPrimary,
+            fontSize = if (label.length > 1) 8.sp else 14.sp,
+        )
     }
 }
 
@@ -506,7 +538,7 @@ private fun StartPage(
             .fillMaxSize()
             .statusBarsPadding()
             .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(horizontal = 16.dp, top = 78.dp, bottom = 58.dp),
+            .padding(horizontal = 20.dp, top = 92.dp, bottom = 20.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -523,28 +555,27 @@ private fun StartPage(
                 Text(
                     "Speed Dial",
                     color = SubTextPrimary,
-                    fontSize = 19.sp,
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
             }
-
             CircleButton("+", onNewTab, accent = true)
         }
 
-        Spacer(Modifier.height(13.dp))
+        Spacer(Modifier.height(14.dp))
 
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(38.dp)
-                .clip(RoundedCornerShape(19.dp))
-                .background(SubSurface)
-                .border(1.dp, SubSurfaceElevated, RoundedCornerShape(19.dp))
+                .height(36.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .background(SubSurface.copy(alpha = 0.78f))
+                .border(1.dp, SubSurfaceElevated, RoundedCornerShape(18.dp))
                 .clickable(onClick = onSearch)
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text("⌕", color = SubSaffron, fontSize = 15.sp)
+            Text("⌕", color = SubSaffron, fontSize = 14.sp)
             Spacer(Modifier.width(7.dp))
             Text(
                 "Search or enter address",
@@ -562,34 +593,21 @@ private fun StartPage(
             CompactAction("P", "Private", onPrivate, Modifier.weight(1f))
             CompactAction("★", "Bookmarks", onBookmarks, Modifier.weight(1f))
             CompactAction("▣", "Tabs", onTabs, Modifier.weight(1f))
-            CompactAction("+", "New tab", onNewTab, Modifier.weight(1f))
+            CompactAction("+", "New", onNewTab, Modifier.weight(1f))
         }
 
         Spacer(Modifier.height(18.dp))
 
-        Text(
-            "Your space",
-            color = SubTextSecondary,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Medium,
-        )
-
-        Spacer(Modifier.height(5.dp))
-
-        Text(
-            "Open a page to begin",
-            color = SubTextPrimary,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.Medium,
-        )
-
-        Spacer(Modifier.height(3.dp))
-
-        Text(
-            "Your tabs, history and tools stay out of the way.",
-            color = SubTextSecondary,
-            fontSize = 10.sp,
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                "A quiet place to browse.",
+                color = SubTextSecondary.copy(alpha = 0.72f),
+                fontSize = 10.sp,
+            )
+        }
     }
 }
 
@@ -600,39 +618,76 @@ private fun CompactAction(
     onClick: () -> Unit,
     modifier: Modifier,
 ) {
-    Row(
+    Column(
         modifier = modifier
-            .height(42.dp)
-            .clip(RoundedCornerShape(11.dp))
-            .background(SubSurface)
-            .border(1.dp, SubSurfaceElevated, RoundedCornerShape(11.dp))
+            .height(52.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(SubSurface.copy(alpha = 0.72f))
+            .border(1.dp, SubSurfaceElevated, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
+            .padding(vertical = 7.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            symbol,
+            color = SubSaffron,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Spacer(Modifier.height(3.dp))
+        Text(
+            title,
+            color = SubTextPrimary,
+            fontSize = 8.sp,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun StartTile(
+    title: String,
+    symbol: String,
+    onClick: () -> Unit,
+    modifier: Modifier,
+) {
+    Column(
+        modifier = modifier
+            .height(82.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(SubSurface)
+            .border(1.dp, SubSurfaceElevated, RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(9.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
             modifier = Modifier
-                .size(23.dp)
+                .size(28.dp)
                 .clip(CircleShape)
                 .background(SubSurfaceElevated),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                symbol,
-                color = SubSaffron,
-                fontSize = if (symbol == "★") 10.sp else 11.sp,
-            )
+            Text(symbol, color = SubSaffron, fontSize = 12.sp)
         }
+        Spacer(Modifier.height(5.dp))
+        Text(title, color = SubTextPrimary, fontSize = 10.sp)
+    }
+}
 
-        Spacer(Modifier.width(5.dp))
-
-        Text(
-            title,
-            color = SubTextPrimary,
-            fontSize = 9.sp,
-            maxLines = 1,
-        )
+@Composable
+private fun QuickPill(label: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(9.dp))
+            .background(SubSurface)
+            .border(1.dp, SubSurfaceElevated, RoundedCornerShape(9.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 9.dp, vertical = 6.dp),
+    ) {
+        Text(label, color = SubTextSecondary, fontSize = 10.sp)
     }
 }
 
