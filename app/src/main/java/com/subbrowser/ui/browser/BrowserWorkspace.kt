@@ -45,10 +45,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.material3.Text
 import com.subbrowser.browser.BrowserController
 import com.subbrowser.browser.model.BrowserState
@@ -419,13 +415,9 @@ private fun CommandSheet(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(44.dp)
-                    .onKeyEvent {
-                        it.type == KeyEventType.KeyUp && it.key == Key.Enter
-                    },
                 textStyle = TextStyle(color = CanvasWhite, fontSize = 12.sp),
                 lineLimits = TextFieldLineLimits.SingleLine,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                keyboardActions = KeyboardActions(onGo = { onSubmit() }),
                 decorator = { inner ->
                     Row(
                         modifier = Modifier
@@ -444,6 +436,12 @@ private fun CommandSheet(
                             }
                             inner()
                         }
+                        Text(
+                            "→",
+                            color = SubSaffron,
+                            fontSize = 16.sp,
+                            modifier = Modifier.clickable(onClick = onSubmit),
+                        )
                     }
                 },
             )
