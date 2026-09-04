@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -61,19 +62,18 @@ import com.subbrowser.ui.theme.SubTextPrimary
 import com.subbrowser.ui.theme.SubTextSecondary
 
 /*
- * Clean Sub Browser UI.
+ * Sub Browser — stable UI shell.
  *
- * Information architecture:
- *   1. One compact browser bar.
- *   2. One Speed Dial start page.
- *   3. One bottom navigation row.
- *   4. Full-screen sheets for tabs/menu/settings.
+ * The shell is intentionally simple:
+ * - one browser bar at the top
+ * - one start page
+ * - one compact bottom navigation row
+ * - separate full-screen panels for browser sections
  *
- * This is a clean-room implementation. It does not copy another
- * browser's source code, assets, layouts, or branding.
+ * All feature entries are UI placeholders until their controllers are wired.
  */
 
-private enum class Surface {
+private enum class Panel {
     NONE,
     SEARCH,
     TABS,
@@ -92,9 +92,9 @@ fun BrowserWorkspace(
     controller: BrowserController = remember { BrowserController() },
 ) {
     var state by remember { mutableStateOf(BrowserState()) }
-    var webViewEpoch by remember { mutableIntStateOf(0) }
-    var surface by remember { mutableStateOf(Surface.NONE) }
-    val addressState = rememberTextFieldState()
+    var webViewVersion by remember { mutableIntStateOf(0) }
+    var panel by remember { mutableStateOf(Panel.NONE) }
+    val address = rememberTextFieldState()
     val context = LocalContext.current
 
     DisposableEffect(controller) {
@@ -102,25 +102,24 @@ fun BrowserWorkspace(
         onDispose { controller.clearObserver() }
     }
 
-    BackHandler(enabled = surface != Surface.NONE) {
-        surface = when (surface) {
-            Surface.SEARCH,
-            Surface.TABS,
-            Surface.MENU,
-            Surface.PAGE_TOOLS -> Surface.NONE
+    BackHandler(enabled = panel != Panel.NONE) {
+        panel = when (panel) {
+            Panel.HISTORY,
+            Panel.BOOKMARKS,
+            Panel.DOWNLOADS,
+            Panel.PRIVACY,
+            Panel.SETTINGS,
+            Panel.APPEARANCE -> Panel.MENU
 
-            Surface.HISTORY,
-            Surface.BOOKMARKS,
-            Surface.DOWNLOADS,
-            Surface.PRIVACY,
-            Surface.SETTINGS,
-            Surface.APPEARANCE -> Surface.MENU
-
-            Surface.NONE -> Surface.NONE
+            Panel.NONE,
+            Panel.SEARCH,
+            Panel.TABS,
+            Panel.MENU,
+            Panel.PAGE_TOOLS -> Panel.NONE
         }
     }
 
-    BackHandler(enabled = surface == Surface.NONE && state.canGoBack) {
+    BackHandler(enabled = panel == Panel.NONE && state.canGoBack) {
         controller.goBack()
     }
 
@@ -130,19 +129,17 @@ fun BrowserWorkspace(
             .background(SubBlack),
     ) {
         if (state.rendererCrashed) {
-            CrashPage(
-                onRecover = {
+            CrashPanel(
+                onReload = {
                     controller.resetAfterRendererCrash()
-                    webViewEpoch++
+                    webViewVersion++
                 },
             )
         } else {
-            key(webViewEpoch) {
+            key(webViewVersion) {
                 AndroidView(
                     factory = {
-                        WebView(context).also {
-                            configureBrowserWebView(it, controller)
-                        }
+                        WebView(context).also { configureBrowserWebView(it, controller) }
                     },
                     modifier = Modifier.fillMaxSize(),
                     update = { controller.syncForUi() },
@@ -150,107 +147,102 @@ fun BrowserWorkspace(
                 )
             }
 
-            if (state.url == "about:blank" && surface == Surface.NONE) {
+            if (state.url == "about:blank" && panel == Panel.NONE) {
                 StartPage(
-                    onSearch = { surface = Surface.SEARCH },
+                    onSearch = { panel = Panel.SEARCH },
                     onNewTab = {
                         controller.newTab()
-                        webViewEpoch++
+                        webViewVersion++
                     },
                     onPrivate = {
                         controller.newTab(isPrivate = true)
-                        webViewEpoch++
+                        webViewVersion++
                     },
-                    onTabs = { surface = Surface.TABS },
-                    onBookmarks = { surface = Surface.BOOKMARKS },
+                    onTabs = { panel = Panel.TABS },
+                    onBookmarks = { panel = Panel.BOOKMARKS },
                 )
             }
 
-            if (surface == Surface.NONE || surface == Surface.SEARCH) {
+            if (panel == Panel.NONE || panel == Panel.SEARCH) {
                 BrowserBar(
                     state = state,
-                    addressState = addressState,
-                    editing = surface == Surface.SEARCH,
-                    onEdit = { surface = Surface.SEARCH },
-                    onCancel = { surface = Surface.NONE },
+                    address = address,
+                    editing = panel == Panel.SEARCH,
+                    onEdit = { panel = Panel.SEARCH },
+                    onCancel = { panel = Panel.NONE },
                     onSubmit = {
-                        val value = addressState.text.toString().trim()
+                        val value = address.text.toString().trim()
                         if (value.isNotEmpty()) controller.navigate(value)
-                        addressState.edit { replace(0, length, "") }
-                        surface = Surface.NONE
+                        address.edit { replace(0, length, "") }
+                        panel = Panel.NONE
                     },
-                    onTabs = { surface = Surface.TABS },
-                    onMenu = { surface = Surface.MENU },
+                    onTabs = { panel = Panel.TABS },
+                    onMenu = { panel = Panel.MENU },
                 )
             }
 
-            if (surface == Surface.NONE) {
+            if (panel == Panel.NONE) {
                 BottomNav(
                     state = state,
                     onBack = controller::goBack,
                     onHome = {
-                        if (state.url == "about:blank") {
-                            surface = Surface.NONE
-                        } else {
-                            controller.navigate("about:blank")
-                        }
+                        if (state.url != "about:blank") controller.navigate("about:blank")
                     },
-                    onTabs = { surface = Surface.TABS },
-                    onMenu = { surface = Surface.MENU },
+                    onTabs = { panel = Panel.TABS },
+                    onMenu = { panel = Panel.MENU },
                 )
             }
         }
 
-        when (surface) {
-            Surface.NONE -> Unit
+        when (panel) {
+            Panel.NONE,
+            Panel.SEARCH -> Unit
 
-            Surface.SEARCH -> Unit
-
-            Surface.TABS -> TabsSheet(
+            Panel.TABS -> TabsPanel(
                 state = state,
-                onBack = { surface = Surface.NONE },
+                onBack = { panel = Panel.NONE },
                 onSelect = {
                     controller.selectTab(it)
-                    surface = Surface.NONE
-                    webViewEpoch++
+                    panel = Panel.NONE
+                    webViewVersion++
                 },
                 onClose = {
                     controller.closeTab(it)
-                    webViewEpoch++
+                    webViewVersion++
                 },
                 onNew = {
                     controller.newTab()
-                    surface = Surface.NONE
-                    webViewEpoch++
+                    panel = Panel.NONE
+                    webViewVersion++
                 },
                 onPrivate = {
                     controller.newTab(isPrivate = true)
-                    surface = Surface.NONE
-                    webViewEpoch++
+                    panel = Panel.NONE
+                    webViewVersion++
                 },
             )
 
-            Surface.MENU -> MenuSheet(
-                onBack = { surface = Surface.NONE },
-                onTabs = { surface = Surface.TABS },
-                onHistory = { surface = Surface.HISTORY },
-                onBookmarks = { surface = Surface.BOOKMARKS },
-                onDownloads = { surface = Surface.DOWNLOADS },
-                onPrivacy = { surface = Surface.PRIVACY },
-                onSettings = { surface = Surface.SETTINGS },
-                onPageTools = { surface = Surface.PAGE_TOOLS },
+            Panel.MENU -> MenuPanel(
+                onBack = { panel = Panel.NONE },
+                onTabs = { panel = Panel.TABS },
+                onHistory = { panel = Panel.HISTORY },
+                onBookmarks = { panel = Panel.BOOKMARKS },
+                onDownloads = { panel = Panel.DOWNLOADS },
+                onPrivacy = { panel = Panel.PRIVACY },
+                onSettings = { panel = Panel.SETTINGS },
+                onPageTools = { panel = Panel.PAGE_TOOLS },
                 onPrivate = {
                     controller.newTab(isPrivate = true)
-                    surface = Surface.NONE
-                    webViewEpoch++
+                    panel = Panel.NONE
+                    webViewVersion++
                 },
             )
 
-            Surface.HISTORY -> ListSheet(
+            Panel.HISTORY -> SimplePanel(
                 title = "History",
                 subtitle = "Recently visited pages",
-                onBack = { surface = Surface.MENU },
-                items = listOf(
+                onBack = { panel = Panel.MENU },
+                rows = listOf(
                     "Today",
                     "Yesterday",
                     "Last 7 days",
@@ -259,11 +251,11 @@ fun BrowserWorkspace(
                 ),
             )
 
-            Surface.BOOKMARKS -> ListSheet(
+            Panel.BOOKMARKS -> SimplePanel(
                 title = "Bookmarks",
-                subtitle = "Your saved websites",
-                onBack = { surface = Surface.MENU },
-                items = listOf(
+                subtitle = "Saved websites",
+                onBack = { panel = Panel.MENU },
+                rows = listOf(
                     "All bookmarks",
                     "Mobile bookmarks",
                     "Add bookmark",
@@ -271,11 +263,11 @@ fun BrowserWorkspace(
                 ),
             )
 
-            Surface.DOWNLOADS -> ListSheet(
+            Panel.DOWNLOADS -> SimplePanel(
                 title = "Downloads",
                 subtitle = "Files from the web",
-                onBack = { surface = Surface.MENU },
-                items = listOf(
+                onBack = { panel = Panel.MENU },
+                rows = listOf(
                     "All downloads",
                     "Active downloads",
                     "Download location",
@@ -283,11 +275,11 @@ fun BrowserWorkspace(
                 ),
             )
 
-            Surface.PRIVACY -> ListSheet(
+            Panel.PRIVACY -> SimplePanel(
                 title = "Privacy",
                 subtitle = "Protection and site controls",
-                onBack = { surface = Surface.MENU },
-                items = listOf(
+                onBack = { panel = Panel.MENU },
+                rows = listOf(
                     "Block trackers",
                     "Block ads",
                     "Anti-fingerprinting",
@@ -298,37 +290,16 @@ fun BrowserWorkspace(
                 ),
             )
 
-            Surface.SETTINGS -> ListSheet(
-                title = "Settings",
-                subtitle = "Browser preferences",
-                onBack = { surface = Surface.MENU },
-                items = listOf(
-                    "Search engine",
-                    "Home page",
-                    "Open links",
-                    "Downloads",
-                    "Autoplay",
-                    "Popups",
-                    "Page zoom",
-                    "Cookies",
-                    "JavaScript",
-                    "Safe Browsing",
-                    "Clear browsing data",
-                ),
-                extra = {
-                    MenuRow(
-                        "Appearance",
-                        "Theme and browser layout",
-                        { surface = Surface.APPEARANCE },
-                    )
-                },
+            Panel.SETTINGS -> SettingsPanel(
+                onBack = { panel = Panel.MENU },
+                onAppearance = { panel = Panel.APPEARANCE },
             )
 
-            Surface.APPEARANCE -> ListSheet(
+            Panel.APPEARANCE -> SimplePanel(
                 title = "Appearance",
-                subtitle = "Keep the browser compact",
-                onBack = { surface = Surface.SETTINGS },
-                items = listOf(
+                subtitle = "Browser layout and theme",
+                onBack = { panel = Panel.SETTINGS },
+                rows = listOf(
                     "System theme",
                     "Light theme",
                     "Dark theme",
@@ -337,11 +308,11 @@ fun BrowserWorkspace(
                 ),
             )
 
-            Surface.PAGE_TOOLS -> ListSheet(
+            Panel.PAGE_TOOLS -> SimplePanel(
                 title = "Page tools",
                 subtitle = "Tools for the current page",
-                onBack = { surface = Surface.NONE },
-                items = listOf(
+                onBack = { panel = Panel.NONE },
+                rows = listOf(
                     "Find in page",
                     "Reader view",
                     "Translate page",
@@ -361,7 +332,7 @@ fun BrowserWorkspace(
 @Composable
 private fun BrowserBar(
     state: BrowserState,
-    addressState: TextFieldState,
+    address: TextFieldState,
     editing: Boolean,
     onEdit: () -> Unit,
     onCancel: () -> Unit,
@@ -369,7 +340,7 @@ private fun BrowserBar(
     onTabs: () -> Unit,
     onMenu: () -> Unit,
 ) {
-    val label = when {
+    val title = when {
         editing -> "Search or enter address"
         state.loading -> "Loading ${state.progress}%"
         state.title.isNotBlank() && state.title != "New Tab" -> state.title
@@ -383,22 +354,7 @@ private fun BrowserBar(
             .padding(horizontal = 9.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(34.dp)
-                .clip(CircleShape)
-                .background(SubSurface)
-                .border(1.dp, SubSurfaceElevated, CircleShape)
-                .clickable(onClick = onEdit),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(
-                "S",
-                color = SubSaffron,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-            )
-        }
+        CircleButton("S", onEdit, accent = true)
 
         Spacer(Modifier.width(6.dp))
 
@@ -410,8 +366,7 @@ private fun BrowserBar(
                 .background(SubSurface)
                 .border(
                     1.dp,
-                    if (editing) SubSaffron.copy(alpha = 0.55f)
-                    else SubSurfaceElevated,
+                    if (editing) SubSaffron.copy(alpha = 0.55f) else SubSurfaceElevated,
                     RoundedCornerShape(19.dp),
                 )
                 .clickable(onClick = onEdit)
@@ -423,12 +378,11 @@ private fun BrowserBar(
                 color = if (state.secureConnection) SubSaffron else SubTextSecondary,
                 fontSize = 7.sp,
             )
-
             Spacer(Modifier.width(7.dp))
 
             if (editing) {
                 BasicTextField(
-                    state = addressState,
+                    state = address,
                     modifier = Modifier.weight(1f),
                     textStyle = TextStyle(
                         color = SubTextPrimary,
@@ -439,9 +393,9 @@ private fun BrowserBar(
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                     onKeyboardAction = { onSubmit() },
                     decorator = { inner ->
-                        if (addressState.text.isEmpty()) {
+                        if (address.text.isEmpty()) {
                             Text(
-                                label,
+                                title,
                                 color = SubTextSecondary,
                                 fontSize = 12.sp,
                                 maxLines = 1,
@@ -455,11 +409,13 @@ private fun BrowserBar(
                     "×",
                     color = SubTextSecondary,
                     fontSize = 16.sp,
-                    modifier = Modifier.clickable(onClick = onCancel),
+                    modifier = Modifier
+                        .padding(start = 6.dp)
+                        .clickable(onClick = onCancel),
                 )
             } else {
                 Text(
-                    label,
+                    title,
                     color = if (state.title.isNotBlank() && state.title != "New Tab")
                         SubTextPrimary else SubTextSecondary,
                     fontSize = 12.sp,
@@ -470,19 +426,9 @@ private fun BrowserBar(
         }
 
         Spacer(Modifier.width(6.dp))
-
-        RoundButton(
-            label = "${state.session.tabs.size}",
-            onClick = onTabs,
-            accent = true,
-        )
-
+        CircleButton("${state.session.tabs.size}", onTabs, accent = true)
         Spacer(Modifier.width(5.dp))
-
-        RoundButton(
-            label = "⋮",
-            onClick = onMenu,
-        )
+        CircleButton("⋮", onMenu)
     }
 }
 
@@ -499,43 +445,22 @@ private fun BottomNav(
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.navigationBars)
             .imePadding()
-            .padding(horizontal = 12.dp, vertical = 7.dp),
+            .padding(horizontal = 14.dp, vertical = 7.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RoundButton(
-            label = "‹",
-            onClick = onBack,
-            enabled = state.canGoBack,
-        )
-
-        Spacer(Modifier.width(8.dp))
-
-        RoundButton(
-            label = "⌂",
-            onClick = onHome,
-            accent = true,
-        )
-
-        Spacer(Modifier.width(8.dp))
-
-        RoundButton(
-            label = "${state.session.tabs.size}",
-            onClick = onTabs,
-            accent = true,
-        )
-
-        Spacer(Modifier.width(8.dp))
-
-        RoundButton(
-            label = "⋮",
-            onClick = onMenu,
-        )
+        CircleButton("‹", onBack, enabled = state.canGoBack)
+        Spacer(Modifier.width(9.dp))
+        CircleButton("⌂", onHome, accent = true)
+        Spacer(Modifier.width(9.dp))
+        CircleButton("${state.session.tabs.size}", onTabs, accent = true)
+        Spacer(Modifier.width(9.dp))
+        CircleButton("⋮", onMenu)
     }
 }
 
 @Composable
-private fun RoundButton(
+private fun CircleButton(
     label: String,
     onClick: () -> Unit,
     enabled: Boolean = true,
@@ -547,7 +472,7 @@ private fun RoundButton(
             .clip(CircleShape)
             .background(
                 if (accent) SubSaffron.copy(alpha = 0.11f)
-                else SubSurface.copy(alpha = 0.96f),
+                else SubSurface.copy(alpha = 0.97f),
             )
             .border(
                 1.dp,
@@ -581,7 +506,7 @@ private fun StartPage(
             .fillMaxSize()
             .statusBarsPadding()
             .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(start = 18.dp, end = 18.dp, top = 86.dp, bottom = 70.dp),
+            .padding(start = 18.dp, end = 18.dp, top = 88.dp, bottom = 66.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -591,164 +516,119 @@ private fun StartPage(
                 Text(
                     "SUB",
                     color = SubSaffron,
-                    fontSize = 12.sp,
+                    fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 2.sp,
                 )
                 Text(
                     "Speed Dial",
                     color = SubTextPrimary,
-                    fontSize = 22.sp,
+                    fontSize = 21.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
             }
+            CircleButton("+", onNewTab, accent = true)
+        }
 
-            RoundButton(
-                label = "+",
-                onClick = onNewTab,
-                accent = true,
+        Spacer(Modifier.height(17.dp))
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(42.dp)
+                .clip(RoundedCornerShape(21.dp))
+                .background(SubSurface)
+                .border(1.dp, SubSurfaceElevated, RoundedCornerShape(21.dp))
+                .clickable(onClick = onSearch)
+                .padding(horizontal = 13.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("⌕", color = SubSaffron, fontSize = 16.sp)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "Search or enter address",
+                color = SubTextSecondary,
+                fontSize = 12.sp,
             )
         }
 
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(14.dp))
 
-        SpeedGrid(
-            onSearch = onSearch,
-            onPrivate = onPrivate,
-            onTabs = onTabs,
-            onBookmarks = onBookmarks,
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            StartTile("Private", "P", onPrivate, Modifier.weight(1f))
+            StartTile("Bookmarks", "★", onBookmarks, Modifier.weight(1f))
+            StartTile("Tabs", "▣", onTabs, Modifier.weight(1f))
+        }
 
-        Spacer(Modifier.height(15.dp))
+        Spacer(Modifier.height(14.dp))
 
         Text(
             "Quick access",
             color = SubTextSecondary,
             fontSize = 10.sp,
-            fontWeight = FontWeight.Medium,
         )
 
         Spacer(Modifier.height(7.dp))
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(7.dp),
-        ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             QuickPill("New tab", onNewTab)
             QuickPill("Private", onPrivate)
-            QuickPill("Bookmarks", onBookmarks)
+            QuickPill("Tabs", onTabs)
         }
     }
 }
 
 @Composable
-private fun SpeedGrid(
-    onSearch: () -> Unit,
-    onPrivate: () -> Unit,
-    onTabs: () -> Unit,
-    onBookmarks: () -> Unit,
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            SpeedCard(
-                title = "Search",
-                symbol = "⌕",
-                onClick = onSearch,
-                modifier = Modifier.weight(1f),
-            )
-            SpeedCard(
-                title = "Private",
-                symbol = "P",
-                onClick = onPrivate,
-                modifier = Modifier.weight(1f),
-            )
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            SpeedCard(
-                title = "Bookmarks",
-                symbol = "★",
-                onClick = onBookmarks,
-                modifier = Modifier.weight(1f),
-            )
-            SpeedCard(
-                title = "Tabs",
-                symbol = "▣",
-                onClick = onTabs,
-                modifier = Modifier.weight(1f),
-            )
-        }
-    }
-}
-
-@Composable
-private fun SpeedCard(
+private fun StartTile(
     title: String,
     symbol: String,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
+    modifier: Modifier,
 ) {
     Column(
         modifier = modifier
-            .height(86.dp)
-            .clip(RoundedCornerShape(13.dp))
+            .height(82.dp)
+            .clip(RoundedCornerShape(12.dp))
             .background(SubSurface)
-            .border(1.dp, SubSurfaceElevated, RoundedCornerShape(13.dp))
+            .border(1.dp, SubSurfaceElevated, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .padding(10.dp),
+            .padding(9.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
             modifier = Modifier
-                .size(30.dp)
+                .size(28.dp)
                 .clip(CircleShape)
                 .background(SubSurfaceElevated),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                symbol,
-                color = SubSaffron,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-            )
+            Text(symbol, color = SubSaffron, fontSize = 12.sp)
         }
-
-        Spacer(Modifier.height(6.dp))
-
-        Text(
-            title,
-            color = SubTextPrimary,
-            fontSize = 10.sp,
-        )
+        Spacer(Modifier.height(5.dp))
+        Text(title, color = SubTextPrimary, fontSize = 10.sp)
     }
 }
 
 @Composable
-private fun QuickPill(
-    label: String,
-    onClick: () -> Unit,
-) {
+private fun QuickPill(label: String, onClick: () -> Unit) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
+            .clip(RoundedCornerShape(9.dp))
             .background(SubSurface)
-            .border(1.dp, SubSurfaceElevated, RoundedCornerShape(10.dp))
+            .border(1.dp, SubSurfaceElevated, RoundedCornerShape(9.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 7.dp),
+            .padding(horizontal = 9.dp, vertical = 6.dp),
     ) {
         Text(label, color = SubTextSecondary, fontSize = 10.sp)
     }
 }
 
 @Composable
-private fun TabsSheet(
+private fun TabsPanel(
     state: BrowserState,
     onBack: () -> Unit,
     onSelect: (Long) -> Unit,
@@ -756,12 +636,8 @@ private fun TabsSheet(
     onNew: () -> Unit,
     onPrivate: () -> Unit,
 ) {
-    BrowserSheet {
-        SheetHeader(
-            title = "Tabs",
-            subtitle = "${state.session.tabs.size} open",
-            onBack = onBack,
-        )
+    BrowserPanel {
+        PanelHeader("Tabs", "${state.session.tabs.size} open", onBack)
 
         Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
             QuickPill("New tab", onNew)
@@ -841,7 +717,7 @@ private fun TabsSheet(
 }
 
 @Composable
-private fun MenuSheet(
+private fun MenuPanel(
     onBack: () -> Unit,
     onTabs: () -> Unit,
     onHistory: () -> Unit,
@@ -852,17 +728,13 @@ private fun MenuSheet(
     onPageTools: () -> Unit,
     onPrivate: () -> Unit,
 ) {
-    BrowserSheet {
-        SheetHeader(
-            title = "Menu",
-            subtitle = "Browser controls",
-            onBack = onBack,
-        )
+    BrowserPanel {
+        PanelHeader("Menu", "Browser controls", onBack)
 
         MenuSection("Browse") {
-            MenuRow("Tabs", "Switch between open pages", onTabs)
+            MenuRow("Tabs", "Open pages", onTabs)
             MenuRow("New private tab", "Private browsing", onPrivate)
-            MenuRow("History", "Recently visited pages", onHistory)
+            MenuRow("History", "Visited pages", onHistory)
             MenuRow("Bookmarks", "Saved websites", onBookmarks)
             MenuRow("Downloads", "Downloaded files", onDownloads)
         }
@@ -876,31 +748,59 @@ private fun MenuSheet(
         }
 
         MenuSection("Browser") {
-            MenuRow("Settings", "Search, downloads, appearance and more", onSettings)
+            MenuRow("Settings", "Browser preferences", onSettings)
         }
     }
 }
 
 @Composable
-private fun ListSheet(
+private fun SettingsPanel(
+    onBack: () -> Unit,
+    onAppearance: () -> Unit,
+) {
+    BrowserPanel {
+        PanelHeader("Settings", "Browser preferences", onBack)
+
+        MenuSection("General") {
+            MenuRow("Appearance", "Theme and browser layout", onAppearance)
+            MenuRow("Search engine", "Default search provider", {})
+            MenuRow("Home page", "Start page behaviour", {})
+            MenuRow("Open links", "Tabs and external apps", {})
+            MenuRow("Language", "Browser language", {})
+        }
+
+        MenuSection("Browsing") {
+            MenuRow("Downloads", "Location and behaviour", {})
+            MenuRow("Autoplay", "Media playback", {})
+            MenuRow("Popups", "Window handling", {})
+            MenuRow("Page zoom", "Default page zoom", {})
+        }
+
+        MenuSection("Privacy & security") {
+            MenuRow("Cookies", "Cookie behaviour", {})
+            MenuRow("JavaScript", "Site scripting", {})
+            MenuRow("Safe Browsing", "Dangerous site protection", {})
+            MenuRow("Clear browsing data", "Delete local browser data", {})
+        }
+    }
+}
+
+@Composable
+private fun SimplePanel(
     title: String,
     subtitle: String,
     onBack: () -> Unit,
-    items: List<String>,
-    extra: @Composable (() -> Unit)? = null,
+    rows: List<String>,
 ) {
-    BrowserSheet {
-        SheetHeader(title = title, subtitle = subtitle, onBack = onBack)
+    BrowserPanel {
+        PanelHeader(title, subtitle, onBack)
 
         LazyColumn(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(7.dp),
         ) {
-            items(items) { item ->
-                MenuRow(item, "Ready to wire", {})
-            }
-            if (extra != null) {
-                item { extra() }
+            items(rows) { row ->
+                MenuRow(row, "Ready to wire", {})
             }
         }
     }
@@ -945,13 +845,12 @@ private fun MenuRow(
             Spacer(Modifier.height(2.dp))
             Text(subtitle, color = SubTextSecondary, fontSize = 9.sp)
         }
-
         Text("›", color = SubTextSecondary, fontSize = 15.sp)
     }
 }
 
 @Composable
-private fun SheetHeader(
+private fun PanelHeader(
     title: String,
     subtitle: String,
     onBack: () -> Unit,
@@ -960,7 +859,7 @@ private fun SheetHeader(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RoundButton("‹", onBack)
+        CircleButton("‹", onBack)
 
         Spacer(Modifier.width(9.dp))
 
@@ -979,11 +878,11 @@ private fun SheetHeader(
         }
     }
 
-    androidx.compose.foundation.layout.Spacer(Modifier.height(13.dp))
+    Spacer(Modifier.height(13.dp))
 }
 
 @Composable
-private fun BrowserSheet(
+private fun BrowserPanel(
     content: @Composable () -> Unit,
 ) {
     Column(
@@ -999,9 +898,7 @@ private fun BrowserSheet(
 }
 
 @Composable
-private fun CrashPage(
-    onRecover: () -> Unit,
-) {
+private fun CrashPanel(onReload: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1015,12 +912,13 @@ private fun CrashPage(
             color = SubTextPrimary,
             fontSize = 16.sp,
         )
+        Spacer(Modifier.height(6.dp))
         Text(
             "The page renderer ended unexpectedly.",
             color = SubTextSecondary,
             fontSize = 11.sp,
         )
         Spacer(Modifier.height(13.dp))
-        QuickPill("Reload", onRecover)
+        QuickPill("Reload", onReload)
     }
 }
