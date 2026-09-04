@@ -538,7 +538,7 @@ private fun StartPage(
             .fillMaxSize()
             .statusBarsPadding()
             .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(horizontal = 20.dp, top = 92.dp, bottom = 20.dp),
+            .padding(start = 20.dp, top = 92.dp, end = 20.dp, bottom = 20.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
