@@ -82,13 +82,18 @@ fun BrowserWorkspace(
     var webViewEpoch by remember { mutableIntStateOf(0) }
     var menuOpen by remember { mutableStateOf(false) }
     var urlText by remember { mutableStateOf("") }
+    var homeSearchText by remember { mutableStateOf("") }
+    var isHomeVisible by remember { mutableStateOf(true) }
     val focusManager = LocalFocusManager.current
 
     DisposableEffect(controller) {
         controller.observe { newState ->
             state = newState
-            if (newState.url != "about:blank" && newState.url.isNotBlank()) {
+            if (newState.url.isNotBlank() && newState.url != "about:blank") {
                 urlText = newState.url
+                isHomeVisible = false
+            } else {
+                isHomeVisible = true
             }
         }
         onDispose { controller.clearObserver() }
@@ -98,8 +103,15 @@ fun BrowserWorkspace(
         menuOpen = false
     }
 
-    BackHandler(enabled = !menuOpen && state.canGoBack) {
-        controller.goBack()
+    BackHandler(enabled = !menuOpen && (state.canGoBack || !isHomeVisible)) {
+        if (state.canGoBack) {
+            controller.goBack()
+        } else {
+            isHomeVisible = true
+            controller.navigate("about:blank")
+            urlText = ""
+            homeSearchText = ""
+        }
     }
 
     val submitNavigation: (String) -> Unit = { rawQuery ->
@@ -114,99 +126,110 @@ fun BrowserWorkspace(
                 "https://www.google.com/search?q=${trimmed.replace(" ", "+")}"
             }
             urlText = target
+            isHomeVisible = false
             controller.navigate(target)
         }
     }
 
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(SubBlack)
             .windowInsetsPadding(WindowInsets.statusBars)
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            // ওপরে ব্রাউজার অ্যাড্রেস বার
-            BrowserTopBar(
-                currentText = urlText,
-                isLoading = state.loading,
-                progress = state.progress,
-                onTextChange = { urlText = it },
-                onSubmit = { submitNavigation(urlText) },
-                onRefresh = {
-                    if (state.loading) controller.stop() else controller.reload()
-                }
-            )
+        // ওপরে স্টিকি প্রফেশনাল অ্যাড্রেস বার
+        BrowserTopBar(
+            currentText = urlText,
+            isLoading = state.loading,
+            progress = state.progress,
+            onTextChange = { urlText = it },
+            onSubmit = { submitNavigation(urlText) },
+            onRefresh = {
+                if (state.loading) controller.stop() else controller.reload()
+            }
+        )
 
-            // মেইন ওয়েবভিউ অথবা হোম পেজ
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-            ) {
-                key(webViewEpoch) {
-                    AndroidView(
-                        factory = { context ->
-                            WebView(context).also {
-                                configureBrowserWebView(it, controller)
-                            }
-                        },
-                        modifier = Modifier.fillMaxSize(),
-                        update = { controller.syncForUi() },
-                        onRelease = { controller.dispose(it) },
-                    )
-                }
-
-                if (state.url == "about:blank" || state.url.isBlank()) {
-                    BrowserHomeScreen(
-                        searchQuery = urlText,
-                        onSearchChange = { urlText = it },
-                        onSearchSubmit = { submitNavigation(urlText) },
-                        onShortcutClick = { targetUrl ->
-                            urlText = targetUrl
-                            submitNavigation(targetUrl)
+        // ব্রাউজিং এরিয়া
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+        ) {
+            key(webViewEpoch) {
+                AndroidView(
+                    factory = { context ->
+                        WebView(context).also {
+                            configureBrowserWebView(it, controller)
                         }
-                    )
-                }
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                    update = { controller.syncForUi() },
+                    onRelease = { controller.dispose(it) },
+                )
             }
 
-            // নিচে মোবাইল ব্রাউজার নেভিগেশন বার
-            BrowserBottomBar(
-                canGoBack = state.canGoBack,
-                canGoForward = state.canGoForward,
-                tabCount = 1,
-                onBack = controller::goBack,
-                onForward = controller::goForward,
-                onHome = {
-                    controller.navigate("about:blank")
-                    urlText = ""
-                },
-                onTabs = { menuOpen = true },
-                onMenu = { menuOpen = true }
-            )
+            if (isHomeVisible) {
+                BrowserHomeScreen(
+                    searchQuery = homeSearchText,
+                    onSearchChange = { homeSearchText = it },
+                    onSearchSubmit = { submitNavigation(homeSearchText) },
+                    onShortcutClick = { targetUrl ->
+                        homeSearchText = ""
+                        submitNavigation(targetUrl)
+                    }
+                )
+            }
         }
 
-        // সাইড মেনু
-        if (menuOpen) {
-            BrowserActionMenu(
-                onClose = { menuOpen = false },
-                onNewTab = {
-                    controller.newTab()
-                    urlText = ""
-                    webViewEpoch++
-                    menuOpen = false
-                },
-                onPrivateTab = {
-                    controller.newTab(isPrivate = true)
-                    urlText = ""
-                    webViewEpoch++
-                    menuOpen = false
-                },
-                onReload = {
-                    controller.reload()
-                    menuOpen = false
+        // নিচে মোবাইল ব্রাউজার নেভিগেশন বার
+        BrowserBottomBar(
+            canGoBack = state.canGoBack,
+            canGoForward = state.canGoForward,
+            tabCount = 1,
+            onBack = {
+                if (state.canGoBack) {
+                    controller.goBack()
+                } else {
+                    isHomeVisible = true
+                    controller.navigate("about:blank")
                 }
-            )
-        }
+            },
+            onForward = controller::goForward,
+            onHome = {
+                isHomeVisible = true
+                controller.navigate("about:blank")
+                urlText = ""
+                homeSearchText = ""
+            },
+            onTabs = { menuOpen = true },
+            onMenu = { menuOpen = true }
+        )
+    }
+
+    if (menuOpen) {
+        BrowserActionMenu(
+            onClose = { menuOpen = false },
+            onNewTab = {
+                controller.newTab()
+                urlText = ""
+                homeSearchText = ""
+                isHomeVisible = true
+                webViewEpoch++
+                menuOpen = false
+            },
+            onPrivateTab = {
+                controller.newTab(isPrivate = true)
+                urlText = ""
+                homeSearchText = ""
+                isHomeVisible = true
+                webViewEpoch++
+                menuOpen = false
+            },
+            onReload = {
+                controller.reload()
+                menuOpen = false
+            }
+        )
     }
 }
 
@@ -223,22 +246,22 @@ private fun BrowserTopBar(
         modifier = Modifier
             .fillMaxWidth()
             .background(SubSurface)
-            .padding(horizontal = 14.dp, vertical = 10.dp)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(48.dp)
-                .clip(RoundedCornerShape(24.dp))
+                .height(44.dp)
+                .clip(RoundedCornerShape(22.dp))
                 .background(CardBg)
-                .border(1.dp, BorderColor, RoundedCornerShape(24.dp))
-                .padding(horizontal = 14.dp),
+                .border(1.dp, BorderColor, RoundedCornerShape(22.dp))
+                .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = if (currentText.startsWith("https://")) "🔒" else "🌐",
-                fontSize = 15.sp,
-                modifier = Modifier.padding(end = 10.dp)
+                fontSize = 13.sp,
+                modifier = Modifier.padding(end = 8.dp)
             )
 
             BasicTextField(
@@ -246,13 +269,13 @@ private fun BrowserTopBar(
                 onValueChange = onTextChange,
                 modifier = Modifier.weight(1f),
                 singleLine = true,
-                textStyle = TextStyle(color = SubTextPrimary, fontSize = 14.sp),
+                textStyle = TextStyle(color = SubTextPrimary, fontSize = 13.sp),
                 cursorBrush = SolidColor(AccentColor),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                 keyboardActions = KeyboardActions(onGo = { onSubmit() }),
                 decorationBox = { innerTextField ->
                     if (currentText.isEmpty()) {
-                        Text("Search or enter web address...", color = SubTextSecondary, fontSize = 13.sp)
+                        Text("Search or enter web address...", color = SubTextSecondary, fontSize = 12.sp)
                     }
                     innerTextField()
                 }
@@ -261,11 +284,11 @@ private fun BrowserTopBar(
             Text(
                 text = if (isLoading) "✕" else "↻",
                 color = SubTextSecondary,
-                fontSize = 16.sp,
+                fontSize = 15.sp,
                 modifier = Modifier
                     .clip(CircleShape)
                     .clickable(onClick = onRefresh)
-                    .padding(6.dp)
+                    .padding(4.dp)
             )
         }
 
@@ -275,7 +298,7 @@ private fun BrowserTopBar(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 4.dp)
-                    .height(2.5.dp),
+                    .height(2.dp),
                 color = AccentColor,
                 trackColor = Color.Transparent
             )
@@ -298,56 +321,56 @@ private fun BrowserHomeScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Top
     ) {
-        Spacer(Modifier.height(40.dp))
+        Spacer(Modifier.height(36.dp))
 
         Box(
             modifier = Modifier
-                .size(68.dp)
+                .size(64.dp)
                 .clip(CircleShape)
                 .background(CardBg)
                 .border(2.dp, AccentColor, CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Text("S", color = AccentColor, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+            Text("S", color = AccentColor, fontSize = 26.sp, fontWeight = FontWeight.Bold)
         }
 
-        Spacer(Modifier.height(14.dp))
-        Text("Sub Browser", color = SubTextPrimary, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(12.dp))
+        Text("Sub Browser", color = SubTextPrimary, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Text("Fast, private and secure browsing", color = SubTextSecondary, fontSize = 12.sp)
 
-        Spacer(Modifier.height(30.dp))
+        Spacer(Modifier.height(26.dp))
 
-        // সেন্ট্রাল সার্চ বক্স (Chrome এর মত)
+        // সেন্ট্রাল সার্চ বক্স
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(52.dp)
-                .clip(RoundedCornerShape(26.dp))
+                .height(48.dp)
+                .clip(RoundedCornerShape(24.dp))
                 .background(CardBg)
-                .border(1.dp, BorderColor, RoundedCornerShape(26.dp))
-                .padding(horizontal = 16.dp),
+                .border(1.dp, BorderColor, RoundedCornerShape(24.dp))
+                .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("🔍", fontSize = 16.sp, modifier = Modifier.padding(end = 10.dp))
+            Text("🔍", fontSize = 14.sp, modifier = Modifier.padding(end = 8.dp))
             BasicTextField(
                 value = searchQuery,
                 onValueChange = onSearchChange,
                 modifier = Modifier.weight(1f),
                 singleLine = true,
-                textStyle = TextStyle(color = SubTextPrimary, fontSize = 15.sp),
+                textStyle = TextStyle(color = SubTextPrimary, fontSize = 14.sp),
                 cursorBrush = SolidColor(AccentColor),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { onSearchSubmit() }),
                 decorationBox = { innerTextField ->
                     if (searchQuery.isEmpty()) {
-                        Text("Search Google or type a URL", color = SubTextSecondary, fontSize = 14.sp)
+                        Text("Search Google or type a URL", color = SubTextSecondary, fontSize = 13.sp)
                     }
                     innerTextField()
                 }
             )
         }
 
-        Spacer(Modifier.height(36.dp))
+        Spacer(Modifier.height(30.dp))
 
         // শর্টকাট গ্রিড
         LazyVerticalGrid(
@@ -366,16 +389,16 @@ private fun BrowserHomeScreen(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(52.dp)
+                            .size(48.dp)
                             .clip(CircleShape)
                             .background(CardBg)
                             .border(1.dp, BorderColor, CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(item.iconText, color = SubTextPrimary, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        Text(item.iconText, color = SubTextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     }
                     Spacer(Modifier.height(6.dp))
-                    Text(item.name, color = SubTextSecondary, fontSize = 12.sp, maxLines = 1)
+                    Text(item.name, color = SubTextSecondary, fontSize = 11.sp, maxLines = 1)
                 }
             }
         }
@@ -399,7 +422,7 @@ private fun BrowserBottomBar(
             .background(SubSurface)
             .border(1.dp, BorderColor)
             .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(horizontal = 10.dp, vertical = 8.dp),
+            .padding(horizontal = 10.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.SpaceAround,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -409,7 +432,7 @@ private fun BrowserBottomBar(
 
         Box(
             modifier = Modifier
-                .size(32.dp)
+                .size(30.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .border(1.5.dp, SubTextPrimary, RoundedCornerShape(8.dp))
                 .clickable(onClick = onTabs),
@@ -418,7 +441,7 @@ private fun BrowserBottomBar(
             Text(
                 text = tabCount.toString(),
                 color = SubTextPrimary,
-                fontSize = 12.sp,
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Bold
             )
         }
@@ -435,7 +458,7 @@ private fun BottomBarIcon(
 ) {
     Box(
         modifier = Modifier
-            .size(42.dp)
+            .size(40.dp)
             .clip(CircleShape)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
@@ -443,7 +466,7 @@ private fun BottomBarIcon(
         Text(
             text = icon,
             color = if (enabled) SubTextPrimary else Color(0xFF4A4A4A),
-            fontSize = 18.sp
+            fontSize = 16.sp
         )
     }
 }
@@ -460,12 +483,12 @@ private fun BrowserActionMenu(
             .fillMaxSize()
             .background(Color(0x99000000))
             .clickable(onClick = onClose)
-            .padding(bottom = 68.dp, end = 12.dp),
+            .padding(bottom = 60.dp, end = 12.dp),
         contentAlignment = Alignment.BottomEnd
     ) {
         Column(
             modifier = Modifier
-                .width(230.dp)
+                .width(220.dp)
                 .clip(RoundedCornerShape(16.dp))
                 .background(CardBg)
                 .border(1.dp, BorderColor, RoundedCornerShape(16.dp))
@@ -475,7 +498,7 @@ private fun BrowserActionMenu(
             Text(
                 "MENU",
                 color = AccentColor,
-                fontSize = 11.sp,
+                fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
             )
@@ -500,10 +523,10 @@ private fun ActionMenuItem(
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(icon, fontSize = 15.sp, modifier = Modifier.width(26.dp))
-        Text(title, color = SubTextPrimary, fontSize = 13.sp)
+        Text(icon, fontSize = 14.sp, modifier = Modifier.width(24.dp))
+        Text(title, color = SubTextPrimary, fontSize = 12.sp)
     }
 }
