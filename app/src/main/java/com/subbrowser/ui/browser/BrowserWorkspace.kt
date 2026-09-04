@@ -116,7 +116,6 @@ fun BrowserWorkspace(
             .background(SubBlack)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Top URL & Search Bar
             BrowserTopBar(
                 currentText = urlText,
                 isLoading = state.loading,
@@ -128,7 +127,6 @@ fun BrowserWorkspace(
                 }
             )
 
-            // Main Web Content or Home Screen
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -157,11 +155,10 @@ fun BrowserWorkspace(
                 }
             }
 
-            // Bottom Navigation Toolbar
             BrowserBottomBar(
                 canGoBack = state.canGoBack,
                 canGoForward = state.canGoForward,
-                tabCount = state.tabs.size.coerceAtLeast(1),
+                tabCount = 1,
                 onBack = controller::goBack,
                 onForward = controller::goForward,
                 onHome = {
@@ -173,7 +170,6 @@ fun BrowserWorkspace(
             )
         }
 
-        // Popup Menu
         if (menuOpen) {
             BrowserActionMenu(
                 onClose = { menuOpen = false },
@@ -358,7 +354,6 @@ private fun BrowserBottomBar(
         BottomBarIcon(icon = "▶", enabled = canGoForward, onClick = onForward)
         BottomBarIcon(icon = "⌂", enabled = true, onClick = onHome)
 
-        // Tab Counter
         Box(
             modifier = Modifier
                 .size(30.dp)
