@@ -9,7 +9,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -62,36 +61,30 @@ import com.subbrowser.ui.theme.SubTextPrimary
 import com.subbrowser.ui.theme.SubTextSecondary
 
 /*
- * Opera-Mini-inspired browser shell, implemented clean-room for Sub Browser.
+ * Clean Sub Browser UI.
  *
- * Design goals:
- * - familiar mobile-browser information architecture
- * - compact combined search/address field
- * - bottom thumb-friendly navigation
- * - Speed Dial start page
- * - visual tab tray
- * - single menu entry for the complete feature catalogue
- * - feature actions are intentionally staged; behaviour can be wired later
- * - no dependency on another browser's source code, assets, or branding
+ * Information architecture:
+ *   1. One compact browser bar.
+ *   2. One Speed Dial start page.
+ *   3. One bottom navigation row.
+ *   4. Full-screen sheets for tabs/menu/settings.
+ *
+ * This is a clean-room implementation. It does not copy another
+ * browser's source code, assets, layouts, or branding.
  */
 
-private enum class BrowserSurface {
+private enum class Surface {
     NONE,
     SEARCH,
     TABS,
     MENU,
-    SPEED_DIAL,
     HISTORY,
     BOOKMARKS,
     DOWNLOADS,
-    SAVED,
     PRIVACY,
     SETTINGS,
     APPEARANCE,
-    READER,
-    TRANSLATE,
-    FIND,
-    SITE_INFO,
+    PAGE_TOOLS,
 }
 
 @Composable
@@ -100,8 +93,8 @@ fun BrowserWorkspace(
 ) {
     var state by remember { mutableStateOf(BrowserState()) }
     var webViewEpoch by remember { mutableIntStateOf(0) }
-    var surface by remember { mutableStateOf(BrowserSurface.NONE) }
-    val searchState = rememberTextFieldState()
+    var surface by remember { mutableStateOf(Surface.NONE) }
+    val addressState = rememberTextFieldState()
     val context = LocalContext.current
 
     DisposableEffect(controller) {
@@ -109,28 +102,25 @@ fun BrowserWorkspace(
         onDispose { controller.clearObserver() }
     }
 
-    BackHandler(enabled = surface != BrowserSurface.NONE) {
+    BackHandler(enabled = surface != Surface.NONE) {
         surface = when (surface) {
-            BrowserSurface.SEARCH -> BrowserSurface.NONE
-            BrowserSurface.TABS -> BrowserSurface.NONE
-            BrowserSurface.MENU -> BrowserSurface.NONE
-            BrowserSurface.SPEED_DIAL -> BrowserSurface.NONE
-            BrowserSurface.HISTORY -> BrowserSurface.MENU
-            BrowserSurface.BOOKMARKS -> BrowserSurface.MENU
-            BrowserSurface.DOWNLOADS -> BrowserSurface.MENU
-            BrowserSurface.SAVED -> BrowserSurface.MENU
-            BrowserSurface.PRIVACY -> BrowserSurface.MENU
-            BrowserSurface.SETTINGS -> BrowserSurface.MENU
-            BrowserSurface.APPEARANCE -> BrowserSurface.SETTINGS
-            BrowserSurface.READER -> BrowserSurface.MENU
-            BrowserSurface.TRANSLATE -> BrowserSurface.MENU
-            BrowserSurface.FIND -> BrowserSurface.NONE
-            BrowserSurface.SITE_INFO -> BrowserSurface.NONE
-            BrowserSurface.NONE -> BrowserSurface.NONE
+            Surface.SEARCH,
+            Surface.TABS,
+            Surface.MENU,
+            Surface.PAGE_TOOLS -> Surface.NONE
+
+            Surface.HISTORY,
+            Surface.BOOKMARKS,
+            Surface.DOWNLOADS,
+            Surface.PRIVACY,
+            Surface.SETTINGS,
+            Surface.APPEARANCE -> Surface.MENU
+
+            Surface.NONE -> Surface.NONE
         }
     }
 
-    BackHandler(enabled = surface == BrowserSurface.NONE && state.canGoBack) {
+    BackHandler(enabled = surface == Surface.NONE && state.canGoBack) {
         controller.goBack()
     }
 
@@ -140,7 +130,7 @@ fun BrowserWorkspace(
             .background(SubBlack),
     ) {
         if (state.rendererCrashed) {
-            CrashSurface(
+            CrashPage(
                 onRecover = {
                     controller.resetAfterRendererCrash()
                     webViewEpoch++
@@ -150,7 +140,9 @@ fun BrowserWorkspace(
             key(webViewEpoch) {
                 AndroidView(
                     factory = {
-                        WebView(context).also { configureBrowserWebView(it, controller) }
+                        WebView(context).also {
+                            configureBrowserWebView(it, controller)
+                        }
                     },
                     modifier = Modifier.fillMaxSize(),
                     update = { controller.syncForUi() },
@@ -158,9 +150,9 @@ fun BrowserWorkspace(
                 )
             }
 
-            if (state.url == "about:blank" && surface == BrowserSurface.NONE) {
-                SpeedDialPage(
-                    onSearch = { surface = BrowserSurface.SEARCH },
+            if (state.url == "about:blank" && surface == Surface.NONE) {
+                StartPage(
+                    onSearch = { surface = Surface.SEARCH },
                     onNewTab = {
                         controller.newTab()
                         webViewEpoch++
@@ -169,53 +161,57 @@ fun BrowserWorkspace(
                         controller.newTab(isPrivate = true)
                         webViewEpoch++
                     },
-                    onTabs = { surface = BrowserSurface.TABS },
-                    onBookmarks = { surface = BrowserSurface.BOOKMARKS },
+                    onTabs = { surface = Surface.TABS },
+                    onBookmarks = { surface = Surface.BOOKMARKS },
                 )
             }
 
-            if (surface == BrowserSurface.NONE || surface == BrowserSurface.SEARCH) {
-                TopBrowserBar(
+            if (surface == Surface.NONE || surface == Surface.SEARCH) {
+                BrowserBar(
                     state = state,
-                    textState = searchState,
-                    expanded = surface == BrowserSurface.SEARCH,
-                    onSearch = { surface = BrowserSurface.SEARCH },
-                    onDismiss = { surface = BrowserSurface.NONE },
+                    addressState = addressState,
+                    editing = surface == Surface.SEARCH,
+                    onEdit = { surface = Surface.SEARCH },
+                    onCancel = { surface = Surface.NONE },
                     onSubmit = {
-                        val value = searchState.text.toString().trim()
+                        val value = addressState.text.toString().trim()
                         if (value.isNotEmpty()) controller.navigate(value)
-                        searchState.edit { replace(0, length, "") }
-                        surface = BrowserSurface.NONE
+                        addressState.edit { replace(0, length, "") }
+                        surface = Surface.NONE
                     },
-                    onTabs = { surface = BrowserSurface.TABS },
-                    onMenu = { surface = BrowserSurface.MENU },
-                    onSiteInfo = { surface = BrowserSurface.SITE_INFO },
+                    onTabs = { surface = Surface.TABS },
+                    onMenu = { surface = Surface.MENU },
                 )
             }
 
-            if (surface == BrowserSurface.NONE) {
-                BottomBrowserBar(
+            if (surface == Surface.NONE) {
+                BottomNav(
                     state = state,
                     onBack = controller::goBack,
-                    onForward = controller::goForward,
-                    onSpeedDial = {
-                        if (state.url == "about:blank") surface = BrowserSurface.SPEED_DIAL
-                        else controller.navigate("about:blank")
+                    onHome = {
+                        if (state.url == "about:blank") {
+                            surface = Surface.NONE
+                        } else {
+                            controller.navigate("about:blank")
+                        }
                     },
-                    onTabs = { surface = BrowserSurface.TABS },
-                    onMenu = { surface = BrowserSurface.MENU },
+                    onTabs = { surface = Surface.TABS },
+                    onMenu = { surface = Surface.MENU },
                 )
             }
         }
 
         when (surface) {
-            BrowserSurface.SEARCH -> Unit
-            BrowserSurface.TABS -> TabTray(
+            Surface.NONE -> Unit
+
+            Surface.SEARCH -> Unit
+
+            Surface.TABS -> TabsSheet(
                 state = state,
-                onDismiss = { surface = BrowserSurface.NONE },
+                onBack = { surface = Surface.NONE },
                 onSelect = {
                     controller.selectTab(it)
-                    surface = BrowserSurface.NONE
+                    surface = Surface.NONE
                     webViewEpoch++
                 },
                 onClose = {
@@ -224,125 +220,157 @@ fun BrowserWorkspace(
                 },
                 onNew = {
                     controller.newTab()
-                    surface = BrowserSurface.NONE
+                    surface = Surface.NONE
                     webViewEpoch++
                 },
                 onPrivate = {
                     controller.newTab(isPrivate = true)
-                    surface = BrowserSurface.NONE
+                    surface = Surface.NONE
                     webViewEpoch++
                 },
             )
-            BrowserSurface.MENU -> MainMenu(
-                onDismiss = { surface = BrowserSurface.NONE },
-                onSpeedDial = { surface = BrowserSurface.SPEED_DIAL },
-                onTabs = { surface = BrowserSurface.TABS },
-                onHistory = { surface = BrowserSurface.HISTORY },
-                onBookmarks = { surface = BrowserSurface.BOOKMARKS },
-                onDownloads = { surface = BrowserSurface.DOWNLOADS },
-                onSaved = { surface = BrowserSurface.SAVED },
-                onPrivacy = { surface = BrowserSurface.PRIVACY },
-                onSettings = { surface = BrowserSurface.SETTINGS },
-                onFind = { surface = BrowserSurface.FIND },
-                onReader = { surface = BrowserSurface.READER },
-                onTranslate = { surface = BrowserSurface.TRANSLATE },
-                onNewPrivate = {
-                    controller.newTab(isPrivate = true)
-                    webViewEpoch++
-                    surface = BrowserSurface.NONE
-                },
-            )
-            BrowserSurface.SPEED_DIAL -> SpeedDialPage(
-                onSearch = { surface = BrowserSurface.SEARCH },
-                onNewTab = {
-                    controller.newTab()
-                    surface = BrowserSurface.NONE
-                    webViewEpoch++
-                },
+
+            Surface.MENU -> MenuSheet(
+                onBack = { surface = Surface.NONE },
+                onTabs = { surface = Surface.TABS },
+                onHistory = { surface = Surface.HISTORY },
+                onBookmarks = { surface = Surface.BOOKMARKS },
+                onDownloads = { surface = Surface.DOWNLOADS },
+                onPrivacy = { surface = Surface.PRIVACY },
+                onSettings = { surface = Surface.SETTINGS },
+                onPageTools = { surface = Surface.PAGE_TOOLS },
                 onPrivate = {
                     controller.newTab(isPrivate = true)
-                    surface = BrowserSurface.NONE
+                    surface = Surface.NONE
                     webViewEpoch++
                 },
-                onTabs = { surface = BrowserSurface.TABS },
-                onBookmarks = { surface = BrowserSurface.BOOKMARKS },
             )
-            BrowserSurface.HISTORY -> FeatureListSurface(
+
+            Surface.HISTORY -> ListSheet(
                 title = "History",
                 subtitle = "Recently visited pages",
-                onBack = { surface = BrowserSurface.MENU },
-                items = listOf("Today", "Yesterday", "Last 7 days", "Search history"),
+                onBack = { surface = Surface.MENU },
+                items = listOf(
+                    "Today",
+                    "Yesterday",
+                    "Last 7 days",
+                    "Search history",
+                    "Clear browsing data",
+                ),
             )
-            BrowserSurface.BOOKMARKS -> FeatureListSurface(
+
+            Surface.BOOKMARKS -> ListSheet(
                 title = "Bookmarks",
-                subtitle = "Your saved sites",
-                onBack = { surface = BrowserSurface.MENU },
-                items = listOf("All bookmarks", "Mobile bookmarks", "Add bookmark", "Bookmark folders"),
+                subtitle = "Your saved websites",
+                onBack = { surface = Surface.MENU },
+                items = listOf(
+                    "All bookmarks",
+                    "Mobile bookmarks",
+                    "Add bookmark",
+                    "Bookmark folders",
+                ),
             )
-            BrowserSurface.DOWNLOADS -> FeatureListSurface(
+
+            Surface.DOWNLOADS -> ListSheet(
                 title = "Downloads",
-                subtitle = "Files saved from the web",
-                onBack = { surface = BrowserSurface.MENU },
-                items = listOf("All downloads", "Active downloads", "Download location", "Clear downloads"),
+                subtitle = "Files from the web",
+                onBack = { surface = Surface.MENU },
+                items = listOf(
+                    "All downloads",
+                    "Active downloads",
+                    "Download location",
+                    "Clear downloads",
+                ),
             )
-            BrowserSurface.SAVED -> FeatureListSurface(
-                title = "Saved pages",
-                subtitle = "Offline reading area",
-                onBack = { surface = BrowserSurface.MENU },
-                items = listOf("All saved pages", "Reader list", "Offline pages"),
+
+            Surface.PRIVACY -> ListSheet(
+                title = "Privacy",
+                subtitle = "Protection and site controls",
+                onBack = { surface = Surface.MENU },
+                items = listOf(
+                    "Block trackers",
+                    "Block ads",
+                    "Anti-fingerprinting",
+                    "Safe Browsing",
+                    "Cookies",
+                    "Site permissions",
+                    "Clear site data",
+                ),
             )
-            BrowserSurface.PRIVACY -> PrivacySurface(onBack = { surface = BrowserSurface.MENU })
-            BrowserSurface.SETTINGS -> SettingsSurface(
-                onBack = { surface = BrowserSurface.MENU },
-                onAppearance = { surface = BrowserSurface.APPEARANCE },
+
+            Surface.SETTINGS -> ListSheet(
+                title = "Settings",
+                subtitle = "Browser preferences",
+                onBack = { surface = Surface.MENU },
+                items = listOf(
+                    "Search engine",
+                    "Home page",
+                    "Open links",
+                    "Downloads",
+                    "Autoplay",
+                    "Popups",
+                    "Page zoom",
+                    "Cookies",
+                    "JavaScript",
+                    "Safe Browsing",
+                    "Clear browsing data",
+                ),
+                extra = {
+                    MenuRow(
+                        "Appearance",
+                        "Theme and browser layout",
+                        { surface = Surface.APPEARANCE },
+                    )
+                },
             )
-            BrowserSurface.APPEARANCE -> FeatureListSurface(
+
+            Surface.APPEARANCE -> ListSheet(
                 title = "Appearance",
-                subtitle = "Browser layout and visual preferences",
-                onBack = { surface = BrowserSurface.SETTINGS },
-                items = listOf("Light", "Dark", "System", "Compact toolbar", "Fullscreen"),
+                subtitle = "Keep the browser compact",
+                onBack = { surface = Surface.SETTINGS },
+                items = listOf(
+                    "System theme",
+                    "Light theme",
+                    "Dark theme",
+                    "Compact layout",
+                    "Fullscreen",
+                ),
             )
-            BrowserSurface.READER -> FeatureListSurface(
-                title = "Reader view",
-                subtitle = "Reading tools",
-                onBack = { surface = BrowserSurface.MENU },
-                items = listOf("Reader mode", "Font size", "Line spacing", "Page width"),
+
+            Surface.PAGE_TOOLS -> ListSheet(
+                title = "Page tools",
+                subtitle = "Tools for the current page",
+                onBack = { surface = Surface.NONE },
+                items = listOf(
+                    "Find in page",
+                    "Reader view",
+                    "Translate page",
+                    "Share page",
+                    "Save page",
+                    "Download",
+                    "Desktop site",
+                    "Zoom in",
+                    "Zoom out",
+                    "Site information",
+                ),
             )
-            BrowserSurface.TRANSLATE -> FeatureListSurface(
-                title = "Translate",
-                subtitle = "Translate the current page",
-                onBack = { surface = BrowserSurface.MENU },
-                items = listOf("Translate page", "Choose language", "Always translate this language"),
-            )
-            BrowserSurface.FIND -> FeatureListSurface(
-                title = "Find in page",
-                subtitle = "Search within the current page",
-                onBack = { surface = BrowserSurface.NONE },
-                items = listOf("Find text", "Previous match", "Next match"),
-            )
-            BrowserSurface.SITE_INFO -> SiteInfoSurface(
-                state = state,
-                onBack = { surface = BrowserSurface.NONE },
-            )
-            BrowserSurface.NONE -> Unit
         }
     }
 }
 
 @Composable
-private fun TopBrowserBar(
+private fun BrowserBar(
     state: BrowserState,
-    textState: TextFieldState,
-    expanded: Boolean,
-    onSearch: () -> Unit,
-    onDismiss: () -> Unit,
+    addressState: TextFieldState,
+    editing: Boolean,
+    onEdit: () -> Unit,
+    onCancel: () -> Unit,
     onSubmit: () -> Unit,
     onTabs: () -> Unit,
     onMenu: () -> Unit,
-    onSiteInfo: () -> Unit,
 ) {
-    val title = when {
-        expanded -> "Search or enter address"
+    val label = when {
+        editing -> "Search or enter address"
         state.loading -> "Loading ${state.progress}%"
         state.title.isNotBlank() && state.title != "New Tab" -> state.title
         else -> "Search or enter address"
@@ -352,64 +380,88 @@ private fun TopBrowserBar(
         modifier = Modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 7.dp, vertical = 6.dp),
+            .padding(horizontal = 9.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        MiniIconButton("⌂", onClick = onSearch, emphasized = !expanded)
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(CircleShape)
+                .background(SubSurface)
+                .border(1.dp, SubSurfaceElevated, CircleShape)
+                .clickable(onClick = onEdit),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                "S",
+                color = SubSaffron,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+            )
+        }
 
-        Spacer(Modifier.width(5.dp))
+        Spacer(Modifier.width(6.dp))
 
         Row(
             modifier = Modifier
                 .weight(1f)
                 .height(38.dp)
                 .clip(RoundedCornerShape(19.dp))
-                .background(SubSurface.copy(alpha = 0.96f))
+                .background(SubSurface)
                 .border(
                     1.dp,
-                    if (expanded) SubSaffron.copy(alpha = 0.55f) else SubSurfaceElevated,
+                    if (editing) SubSaffron.copy(alpha = 0.55f)
+                    else SubSurfaceElevated,
                     RoundedCornerShape(19.dp),
                 )
-                .clickable(onClick = onSearch)
-                .padding(horizontal = 10.dp),
+                .clickable(onClick = onEdit)
+                .padding(horizontal = 11.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
                 if (state.secureConnection) "●" else "○",
                 color = if (state.secureConnection) SubSaffron else SubTextSecondary,
-                fontSize = 8.sp,
-                modifier = Modifier.clickable(onClick = onSiteInfo),
+                fontSize = 7.sp,
             )
+
             Spacer(Modifier.width(7.dp))
 
-            if (expanded) {
+            if (editing) {
                 BasicTextField(
-                    state = textState,
+                    state = addressState,
                     modifier = Modifier.weight(1f),
-                    textStyle = TextStyle(color = SubTextPrimary, fontSize = 12.sp),
+                    textStyle = TextStyle(
+                        color = SubTextPrimary,
+                        fontSize = 12.sp,
+                    ),
                     cursorBrush = SolidColor(SubSaffron),
                     lineLimits = TextFieldLineLimits.SingleLine,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                     onKeyboardAction = { onSubmit() },
                     decorator = { inner ->
-                        if (textState.text.isEmpty()) {
-                            Text(title, color = SubTextSecondary, fontSize = 12.sp, maxLines = 1)
+                        if (addressState.text.isEmpty()) {
+                            Text(
+                                label,
+                                color = SubTextSecondary,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                            )
                         }
                         inner()
                     },
                 )
+
                 Text(
                     "×",
                     color = SubTextSecondary,
                     fontSize = 16.sp,
-                    modifier = Modifier
-                        .padding(start = 6.dp)
-                        .clickable(onClick = onDismiss),
+                    modifier = Modifier.clickable(onClick = onCancel),
                 )
             } else {
                 Text(
-                    title,
-                    color = if (state.title != "New Tab") SubTextPrimary else SubTextSecondary,
+                    label,
+                    color = if (state.title.isNotBlank() && state.title != "New Tab")
+                        SubTextPrimary else SubTextSecondary,
                     fontSize = 12.sp,
                     maxLines = 1,
                     modifier = Modifier.weight(1f),
@@ -417,19 +469,28 @@ private fun TopBrowserBar(
             }
         }
 
+        Spacer(Modifier.width(6.dp))
+
+        RoundButton(
+            label = "${state.session.tabs.size}",
+            onClick = onTabs,
+            accent = true,
+        )
+
         Spacer(Modifier.width(5.dp))
-        MiniIconButton("${state.session.tabs.size}", onClick = onTabs, emphasized = true)
-        Spacer(Modifier.width(4.dp))
-        MiniIconButton("⋮", onClick = onMenu)
+
+        RoundButton(
+            label = "⋮",
+            onClick = onMenu,
+        )
     }
 }
 
 @Composable
-private fun BottomBrowserBar(
+private fun BottomNav(
     state: BrowserState,
     onBack: () -> Unit,
-    onForward: () -> Unit,
-    onSpeedDial: () -> Unit,
+    onHome: () -> Unit,
     onTabs: () -> Unit,
     onMenu: () -> Unit,
 ) {
@@ -438,58 +499,77 @@ private fun BottomBrowserBar(
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.navigationBars)
             .imePadding()
-            .padding(horizontal = 14.dp, vertical = 7.dp),
+            .padding(horizontal = 12.dp, vertical = 7.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        MiniIconButton("‹", onBack, enabled = state.canGoBack)
-        Spacer(Modifier.width(7.dp))
-        MiniIconButton("›", onForward, enabled = state.canGoForward)
-        Spacer(Modifier.width(9.dp))
-        MiniIconButton("⌂", onSpeedDial, emphasized = true)
-        Spacer(Modifier.width(9.dp))
-        MiniIconButton("${state.session.tabs.size}", onTabs, emphasized = true)
-        Spacer(Modifier.width(7.dp))
-        MiniIconButton("⋮", onMenu)
+        RoundButton(
+            label = "‹",
+            onClick = onBack,
+            enabled = state.canGoBack,
+        )
+
+        Spacer(Modifier.width(8.dp))
+
+        RoundButton(
+            label = "⌂",
+            onClick = onHome,
+            accent = true,
+        )
+
+        Spacer(Modifier.width(8.dp))
+
+        RoundButton(
+            label = "${state.session.tabs.size}",
+            onClick = onTabs,
+            accent = true,
+        )
+
+        Spacer(Modifier.width(8.dp))
+
+        RoundButton(
+            label = "⋮",
+            onClick = onMenu,
+        )
     }
 }
 
 @Composable
-private fun MiniIconButton(
+private fun RoundButton(
     label: String,
     onClick: () -> Unit,
     enabled: Boolean = true,
-    emphasized: Boolean = false,
+    accent: Boolean = false,
 ) {
     Box(
         modifier = Modifier
             .size(34.dp)
             .clip(CircleShape)
             .background(
-                if (emphasized) SubSaffron.copy(alpha = 0.12f)
-                else SubSurface.copy(alpha = 0.94f),
+                if (accent) SubSaffron.copy(alpha = 0.11f)
+                else SubSurface.copy(alpha = 0.96f),
             )
             .border(
                 1.dp,
-                if (emphasized) SubSaffron.copy(alpha = 0.42f)
+                if (accent) SubSaffron.copy(alpha = 0.40f)
                 else SubSurfaceElevated,
                 CircleShape,
             )
-            .alpha(if (enabled) 1f else 0.28f)
+            .alpha(if (enabled) 1f else 0.25f)
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(
             label,
-            color = if (emphasized) SubSaffron else SubTextPrimary,
-            fontSize = if (label.length > 1) 9.sp else 16.sp,
-            fontWeight = if (emphasized) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (accent) SubSaffron else SubTextPrimary,
+            fontSize = if (label.length > 1) 9.sp else 17.sp,
+            fontWeight = if (accent) FontWeight.SemiBold else FontWeight.Normal,
         )
     }
 }
 
 @Composable
-private fun SpeedDialPage(
+private fun StartPage(
     onSearch: () -> Unit,
     onNewTab: () -> Unit,
     onPrivate: () -> Unit,
@@ -501,61 +581,48 @@ private fun SpeedDialPage(
             .fillMaxSize()
             .statusBarsPadding()
             .windowInsetsPadding(WindowInsets.navigationBars)
-            .padding(horizontal = 16.dp, vertical = 56.dp),
+            .padding(start = 18.dp, end = 18.dp, top = 86.dp, bottom = 70.dp),
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
+            verticalAlignment = Alignment.Bottom,
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    "SUB BROWSER",
+                    "SUB",
                     color = SubSaffron,
-                    fontSize = 11.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 2.sp,
                 )
-                Spacer(Modifier.height(2.dp))
                 Text(
                     "Speed Dial",
                     color = SubTextPrimary,
-                    fontSize = 19.sp,
+                    fontSize = 22.sp,
                     fontWeight = FontWeight.SemiBold,
                 )
             }
-            MiniIconButton("+", onClick = onNewTab, emphasized = true)
-        }
 
-        Spacer(Modifier.height(15.dp))
-
-        SearchStartCard(onClick = onSearch)
-
-        Spacer(Modifier.height(15.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            SpeedTile("Google", "G", onSearch, Modifier.weight(1f))
-            SpeedTile("YouTube", "▶", onSearch, Modifier.weight(1f))
-            SpeedTile("Wikipedia", "W", onSearch, Modifier.weight(1f))
-        }
-
-        Spacer(Modifier.height(8.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            SpeedTile("Bookmarks", "★", onBookmarks, Modifier.weight(1f))
-            SpeedTile("Private", "P", onPrivate, Modifier.weight(1f))
-            SpeedTile("Tabs", "▣", onTabs, Modifier.weight(1f))
+            RoundButton(
+                label = "+",
+                onClick = onNewTab,
+                accent = true,
+            )
         }
 
         Spacer(Modifier.height(18.dp))
 
+        SpeedGrid(
+            onSearch = onSearch,
+            onPrivate = onPrivate,
+            onTabs = onTabs,
+            onBookmarks = onBookmarks,
+        )
+
+        Spacer(Modifier.height(15.dp))
+
         Text(
-            "Quick actions",
+            "Quick access",
             color = SubTextSecondary,
             fontSize = 10.sp,
             fontWeight = FontWeight.Medium,
@@ -564,105 +631,144 @@ private fun SpeedDialPage(
         Spacer(Modifier.height(7.dp))
 
         Row(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
         ) {
-            TinyAction("New tab", onNewTab)
-            TinyAction("Private", onPrivate)
-            TinyAction("Tabs", onTabs)
+            QuickPill("New tab", onNewTab)
+            QuickPill("Private", onPrivate)
+            QuickPill("Bookmarks", onBookmarks)
         }
     }
 }
 
 @Composable
-private fun SearchStartCard(onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(43.dp)
-            .clip(RoundedCornerShape(22.dp))
-            .background(SubSurface)
-            .border(1.dp, SubSurfaceElevated, RoundedCornerShape(22.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 13.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text("⌕", color = SubSaffron, fontSize = 17.sp)
-        Spacer(Modifier.width(8.dp))
-        Text("Search or enter address", color = SubTextSecondary, fontSize = 12.sp)
+private fun SpeedGrid(
+    onSearch: () -> Unit,
+    onPrivate: () -> Unit,
+    onTabs: () -> Unit,
+    onBookmarks: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            SpeedCard(
+                title = "Search",
+                symbol = "⌕",
+                onClick = onSearch,
+                modifier = Modifier.weight(1f),
+            )
+            SpeedCard(
+                title = "Private",
+                symbol = "P",
+                onClick = onPrivate,
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            SpeedCard(
+                title = "Bookmarks",
+                symbol = "★",
+                onClick = onBookmarks,
+                modifier = Modifier.weight(1f),
+            )
+            SpeedCard(
+                title = "Tabs",
+                symbol = "▣",
+                onClick = onTabs,
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 
 @Composable
-private fun SpeedTile(
+private fun SpeedCard(
     title: String,
-    icon: String,
+    symbol: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
         modifier = modifier
-            .height(74.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .height(86.dp)
+            .clip(RoundedCornerShape(13.dp))
             .background(SubSurface)
-            .border(1.dp, SubSurfaceElevated, RoundedCornerShape(12.dp))
+            .border(1.dp, SubSurfaceElevated, RoundedCornerShape(13.dp))
             .clickable(onClick = onClick)
-            .padding(9.dp),
+            .padding(10.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Box(
             modifier = Modifier
-                .size(27.dp)
+                .size(30.dp)
                 .clip(CircleShape)
                 .background(SubSurfaceElevated),
             contentAlignment = Alignment.Center,
         ) {
-            Text(icon, color = SubSaffron, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            Text(
+                symbol,
+                color = SubSaffron,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+            )
         }
-        Spacer(Modifier.height(5.dp))
-        Text(title, color = SubTextPrimary, fontSize = 10.sp, maxLines = 1)
+
+        Spacer(Modifier.height(6.dp))
+
+        Text(
+            title,
+            color = SubTextPrimary,
+            fontSize = 10.sp,
+        )
     }
 }
 
 @Composable
-private fun TinyAction(label: String, onClick: () -> Unit) {
+private fun QuickPill(
+    label: String,
+    onClick: () -> Unit,
+) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(9.dp))
+            .clip(RoundedCornerShape(10.dp))
             .background(SubSurface)
-            .border(1.dp, SubSurfaceElevated, RoundedCornerShape(9.dp))
+            .border(1.dp, SubSurfaceElevated, RoundedCornerShape(10.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 9.dp, vertical = 6.dp),
+            .padding(horizontal = 10.dp, vertical = 7.dp),
     ) {
         Text(label, color = SubTextSecondary, fontSize = 10.sp)
     }
 }
 
 @Composable
-private fun TabTray(
+private fun TabsSheet(
     state: BrowserState,
-    onDismiss: () -> Unit,
+    onBack: () -> Unit,
     onSelect: (Long) -> Unit,
     onClose: (Long) -> Unit,
     onNew: () -> Unit,
     onPrivate: () -> Unit,
 ) {
-    FullBrowserSurface {
-        SurfaceHeader(
+    BrowserSheet {
+        SheetHeader(
             title = "Tabs",
             subtitle = "${state.session.tabs.size} open",
-            onBack = onDismiss,
+            onBack = onBack,
         )
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            TinyAction("New tab", onNew)
-            TinyAction("Private", onPrivate)
+        Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            QuickPill("New tab", onNew)
+            QuickPill("Private", onPrivate)
         }
 
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(11.dp))
 
         LazyColumn(
             modifier = Modifier.fillMaxWidth(),
@@ -691,18 +797,20 @@ private fun TabTray(
                 ) {
                     Box(
                         modifier = Modifier
-                            .size(27.dp)
+                            .size(28.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .background(SubSurfaceElevated),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            "${tab.id}",
+                            if (tab.isPrivate) "P" else "${tab.id}",
                             color = if (tab.isPrivate) SubSaffron else SubTextSecondary,
                             fontSize = 9.sp,
                         )
                     }
+
                     Spacer(Modifier.width(9.dp))
+
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             tab.title.ifBlank { "New Tab" },
@@ -710,7 +818,6 @@ private fun TabTray(
                             fontSize = 11.sp,
                             maxLines = 1,
                         )
-                        Spacer(Modifier.height(2.dp))
                         Text(
                             tab.url,
                             color = SubTextSecondary,
@@ -718,13 +825,14 @@ private fun TabTray(
                             maxLines = 1,
                         )
                     }
+
                     Text(
-                        if (tab.isPrivate) "PRIVATE" else "×",
-                        color = if (tab.isPrivate) SubSaffron else SubTextSecondary,
-                        fontSize = 10.sp,
+                        "×",
+                        color = SubTextSecondary,
+                        fontSize = 15.sp,
                         modifier = Modifier
                             .padding(start = 8.dp)
-                            .clickable { if (!tab.isPrivate) onClose(tab.id) },
+                            .clickable { onClose(tab.id) },
                     )
                 }
             }
@@ -733,66 +841,76 @@ private fun TabTray(
 }
 
 @Composable
-private fun MainMenu(
-    onDismiss: () -> Unit,
-    onSpeedDial: () -> Unit,
+private fun MenuSheet(
+    onBack: () -> Unit,
     onTabs: () -> Unit,
     onHistory: () -> Unit,
     onBookmarks: () -> Unit,
     onDownloads: () -> Unit,
-    onSaved: () -> Unit,
     onPrivacy: () -> Unit,
     onSettings: () -> Unit,
-    onFind: () -> Unit,
-    onReader: () -> Unit,
-    onTranslate: () -> Unit,
-    onNewPrivate: () -> Unit,
+    onPageTools: () -> Unit,
+    onPrivate: () -> Unit,
 ) {
-    FullBrowserSurface {
-        SurfaceHeader(
+    BrowserSheet {
+        SheetHeader(
             title = "Menu",
-            subtitle = "Everything in one place",
-            onBack = onDismiss,
+            subtitle = "Browser controls",
+            onBack = onBack,
         )
 
         MenuSection("Browse") {
-            MenuRow("Speed Dial", "Start page", onSpeedDial)
-            MenuRow("Tabs", "Open pages", onTabs)
-            MenuRow("New private tab", "Private browsing", onNewPrivate)
+            MenuRow("Tabs", "Switch between open pages", onTabs)
+            MenuRow("New private tab", "Private browsing", onPrivate)
+            MenuRow("History", "Recently visited pages", onHistory)
+            MenuRow("Bookmarks", "Saved websites", onBookmarks)
+            MenuRow("Downloads", "Downloaded files", onDownloads)
         }
 
         MenuSection("Page") {
-            MenuRow("Find in page", "Search page text", onFind)
-            MenuRow("Reader view", "Distraction-free reading", onReader)
-            MenuRow("Translate", "Translate this page", onTranslate)
-            MenuRow("Share", "Share current page", {})
-            MenuRow("Save page", "Save for later", {})
-            MenuRow("Download", "Save file", {})
-        }
-
-        MenuSection("Library") {
-            MenuRow("History", "Visited pages", onHistory)
-            MenuRow("Bookmarks", "Saved sites", onBookmarks)
-            MenuRow("Downloads", "Downloaded files", onDownloads)
-            MenuRow("Saved pages", "Offline reading", onSaved)
+            MenuRow("Page tools", "Find, reader, translate, share and more", onPageTools)
         }
 
         MenuSection("Protection") {
-            MenuRow("Privacy", "Protection controls", onPrivacy)
-            MenuRow("Site permissions", "Camera, mic, location", {})
-            MenuRow("Connection", "Secure connection", {})
+            MenuRow("Privacy", "Tracking and site controls", onPrivacy)
         }
 
         MenuSection("Browser") {
-            MenuRow("Settings", "All browser settings", onSettings)
-            MenuRow("Appearance", "Layout and theme", {})
-            MenuRow("Clear browsing data", "History, cookies, cache", {})
+            MenuRow("Settings", "Search, downloads, appearance and more", onSettings)
         }
     }
 }
 
 @Composable
-private fun MenuSection(title: String, content: @Composable () -> Unit) {
+private fun ListSheet(
+    title: String,
+    subtitle: String,
+    onBack: () -> Unit,
+    items: List<String>,
+    extra: @Composable (() -> Unit)? = null,
+) {
+    BrowserSheet {
+        SheetHeader(title = title, subtitle = subtitle, onBack = onBack)
+
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            items(items) { item ->
+                MenuRow(item, "Ready to wire", {})
+            }
+            if (extra != null) {
+                item { extra() }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MenuSection(
+    title: String,
+    content: @Composable () -> Unit,
+) {
     Column {
         Text(
             title,
@@ -802,7 +920,7 @@ private fun MenuSection(title: String, content: @Composable () -> Unit) {
         )
         Spacer(Modifier.height(5.dp))
         content()
-        Spacer(Modifier.height(12.dp))
+        Spacer(Modifier.height(11.dp))
     }
 }
 
@@ -827,125 +945,13 @@ private fun MenuRow(
             Spacer(Modifier.height(2.dp))
             Text(subtitle, color = SubTextSecondary, fontSize = 9.sp)
         }
+
         Text("›", color = SubTextSecondary, fontSize = 15.sp)
     }
 }
 
 @Composable
-private fun SettingsSurface(
-    onBack: () -> Unit,
-    onAppearance: () -> Unit,
-) {
-    FullBrowserSurface {
-        SurfaceHeader(
-            title = "Settings",
-            subtitle = "Browser preferences",
-            onBack = onBack,
-        )
-
-        MenuSection("General") {
-            MenuRow("Appearance", "Theme, layout, fullscreen", onAppearance)
-            MenuRow("Search engine", "Default search provider", {})
-            MenuRow("Home page", "Start page behaviour", {})
-            MenuRow("Open links", "Tabs and external apps", {})
-            MenuRow("Language", "Browser language", {})
-        }
-
-        MenuSection("Browsing") {
-            MenuRow("Downloads", "Location and behaviour", {})
-            MenuRow("Autoplay", "Media playback", {})
-            MenuRow("Popups", "Window and popup handling", {})
-            MenuRow("Page zoom", "Default page zoom", {})
-        }
-
-        MenuSection("Privacy & security") {
-            MenuRow("Privacy protection", "Tracking and ad controls", {})
-            MenuRow("Cookies", "Cookie behaviour", {})
-            MenuRow("JavaScript", "Site scripting", {})
-            MenuRow("Safe Browsing", "Malicious site protection", {})
-            MenuRow("Clear browsing data", "Delete local browser data", {})
-        }
-    }
-}
-
-@Composable
-private fun PrivacySurface(onBack: () -> Unit) {
-    FullBrowserSurface {
-        SurfaceHeader(
-            title = "Privacy",
-            subtitle = "Protection controls",
-            onBack = onBack,
-        )
-
-        MenuSection("Protection") {
-            MenuRow("Block trackers", "Prevent common tracking scripts", {})
-            MenuRow("Block ads", "Content filtering", {})
-            MenuRow("Anti-fingerprinting", "Reduce identifying signals", {})
-            MenuRow("Safe Browsing", "Warn about dangerous sites", {})
-            MenuRow("Private browsing", "No normal history for private tabs", {})
-        }
-
-        MenuSection("Site data") {
-            MenuRow("Cookies", "Control site cookies", {})
-            MenuRow("Site permissions", "Camera, microphone, location", {})
-            MenuRow("Clear site data", "Remove current site data", {})
-            MenuRow("Clear browsing data", "History, cache, cookies", {})
-        }
-    }
-}
-
-@Composable
-private fun FeatureListSurface(
-    title: String,
-    subtitle: String,
-    onBack: () -> Unit,
-    items: List<String>,
-) {
-    FullBrowserSurface {
-        SurfaceHeader(title = title, subtitle = subtitle, onBack = onBack)
-
-        LazyColumn(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(7.dp),
-        ) {
-            items(items) { item ->
-                MenuRow(item, "Ready to wire", {})
-            }
-        }
-    }
-}
-
-@Composable
-private fun SiteInfoSurface(
-    state: BrowserState,
-    onBack: () -> Unit,
-) {
-    FullBrowserSurface {
-        SurfaceHeader(
-            title = "Site information",
-            subtitle = "Connection and permissions",
-            onBack = onBack,
-        )
-
-        MenuSection("Connection") {
-            MenuRow(
-                if (state.secureConnection) "Secure connection" else "Connection not verified",
-                state.url,
-                {},
-            )
-        }
-
-        MenuSection("Permissions") {
-            MenuRow("Camera", "Ask / Allow / Block", {})
-            MenuRow("Microphone", "Ask / Allow / Block", {})
-            MenuRow("Location", "Ask / Allow / Block", {})
-            MenuRow("Notifications", "Ask / Allow / Block", {})
-        }
-    }
-}
-
-@Composable
-private fun SurfaceHeader(
+private fun SheetHeader(
     title: String,
     subtitle: String,
     onBack: () -> Unit,
@@ -954,8 +960,10 @@ private fun SurfaceHeader(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        MiniIconButton("‹", onBack)
+        RoundButton("‹", onBack)
+
         Spacer(Modifier.width(9.dp))
+
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 title,
@@ -963,7 +971,6 @@ private fun SurfaceHeader(
                 fontSize = 17.sp,
                 fontWeight = FontWeight.SemiBold,
             )
-            Spacer(Modifier.height(2.dp))
             Text(
                 subtitle,
                 color = SubTextSecondary,
@@ -971,11 +978,12 @@ private fun SurfaceHeader(
             )
         }
     }
-    Spacer(Modifier.height(13.dp))
+
+    androidx.compose.foundation.layout.Spacer(Modifier.height(13.dp))
 }
 
 @Composable
-private fun FullBrowserSurface(
+private fun BrowserSheet(
     content: @Composable () -> Unit,
 ) {
     Column(
@@ -991,7 +999,9 @@ private fun FullBrowserSurface(
 }
 
 @Composable
-private fun CrashSurface(onRecover: () -> Unit) {
+private fun CrashPage(
+    onRecover: () -> Unit,
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1000,14 +1010,17 @@ private fun CrashSurface(onRecover: () -> Unit) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("Web content stopped", color = SubTextPrimary, fontSize = 16.sp)
-        Spacer(Modifier.height(7.dp))
+        Text(
+            "Web content stopped",
+            color = SubTextPrimary,
+            fontSize = 16.sp,
+        )
         Text(
             "The page renderer ended unexpectedly.",
             color = SubTextSecondary,
             fontSize = 11.sp,
         )
-        Spacer(Modifier.height(14.dp))
-        TinyAction("Reload", onRecover)
+        Spacer(Modifier.height(13.dp))
+        QuickPill("Reload", onRecover)
     }
 }
