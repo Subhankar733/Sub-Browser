@@ -31,8 +31,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -85,8 +84,10 @@ fun BrowserWorkspace(
     DisposableEffect(controller) {
         controller.observe { newState ->
             state = newState
-            if (newState.url != "about:blank" && newState.url.isNotBlank()) {
-                urlText = newState.url
+            if (newState.url != "about:blank" && newState.url.isNotBlank() && !state.loading) {
+                if (urlText != newState.url) {
+                    urlText = newState.url
+                }
             }
         }
         onDispose { controller.clearObserver() }
@@ -148,7 +149,7 @@ fun BrowserWorkspace(
                     }
                 },
                 modifier = Modifier.fillMaxSize(),
-                update = { controller.syncForUi() },
+                update = { },
                 onRelease = { controller.dispose(it) },
             )
 
