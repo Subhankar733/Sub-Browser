@@ -355,7 +355,7 @@ private fun BrowserHomeScreen(
                 .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("🔍", fontSize = 14.sp, modifier = Modifier.padding(end = 8.dp))
+            Icon(Icons.Rounded.Search, contentDescription = null, tint = SubTextSecondary, modifier = Modifier.padding(end = 8.dp).size(18.dp))
             BasicTextField(
                 value = searchQuery,
                 onValueChange = onSearchChange,
@@ -429,13 +429,13 @@ private fun BrowserBottomBar(
         horizontalArrangement = Arrangement.SpaceAround,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        BottomBarIcon(icon = "◀", enabled = canGoBack, onClick = onBack)
-        BottomBarIcon(icon = "▶", enabled = canGoForward, onClick = onForward)
-        BottomBarIcon(icon = "⌂", enabled = true, onClick = onHome)
+        BottomBarIcon(icon = Icons.Rounded.ArrowBack, enabled = canGoBack, onClick = onBack)
+        BottomBarIcon(icon = Icons.Rounded.ArrowForward, enabled = canGoForward, onClick = onForward)
+        BottomBarIcon(icon = Icons.Rounded.Home, enabled = true, onClick = onHome)
 
         Box(
             modifier = Modifier
-                .size(30.dp)
+                .size(32.dp)
                 .clip(RoundedCornerShape(8.dp))
                 .border(1.5.dp, SubTextPrimary, RoundedCornerShape(8.dp))
                 .clickable(onClick = onTabs),
@@ -444,18 +444,18 @@ private fun BrowserBottomBar(
             Text(
                 text = tabCount.toString(),
                 color = SubTextPrimary,
-                fontSize = 11.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.Bold
             )
         }
 
-        BottomBarIcon(icon = "⋮", enabled = true, onClick = onMenu)
+        BottomBarIcon(icon = Icons.Rounded.MoreVert, enabled = true, onClick = onMenu)
     }
 }
 
 @Composable
 private fun BottomBarIcon(
-    icon: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
     enabled: Boolean,
     onClick: () -> Unit
 ) {
@@ -466,10 +466,11 @@ private fun BottomBarIcon(
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = icon,
-            color = if (enabled) SubTextPrimary else Color(0xFF4A4A4A),
-            fontSize = 16.sp
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            tint = if (enabled) SubTextPrimary else Color(0xFF555555),
+            modifier = Modifier.size(22.dp)
         )
     }
 }
