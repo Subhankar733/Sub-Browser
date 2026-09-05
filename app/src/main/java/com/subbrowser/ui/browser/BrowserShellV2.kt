@@ -371,7 +371,7 @@ private fun BrowserNewTabPage(
 }
 
 @Composable
-private fun ShortcutChip(name: String, url: String, onClick: (String) -> Unit) {
+private fun RowScope.ShortcutChip(name: String, url: String, onClick: (String) -> Unit) {
     Column(
         Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).clickable { onClick(url) }.padding(vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -389,7 +389,7 @@ private fun ShortcutChip(name: String, url: String, onClick: (String) -> Unit) {
 }
 
 @Composable
-private fun BrowserFloatingDock(
+private fun BoxScope.BrowserFloatingDock(
     state: BrowserState,
     onBack: () -> Unit,
     onForward: () -> Unit,
