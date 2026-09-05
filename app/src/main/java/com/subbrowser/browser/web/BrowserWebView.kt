@@ -43,6 +43,7 @@ fun configureBrowserWebView(
         ): Boolean = false
 
         override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
+            controller.attach(webView)
             controller.onNavigationStarted(url)
         }
 

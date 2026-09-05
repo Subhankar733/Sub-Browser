@@ -120,7 +120,7 @@ fun BrowserWorkspace(
         modifier = Modifier
             .fillMaxSize()
             .background(SubBlack)
-            .windowInsetsPadding(WindowInsets.statusBars)
+            
     ) {
         // ওপরে অ্যাড্রেস বার
         BrowserTopBar(
