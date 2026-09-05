@@ -5,7 +5,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import com.subbrowser.browser.BrowserController
-import com.subbrowser.ui.browser.BrowserWorkspace
+import com.subbrowser.ui.browser.BrowserShellV2
 import com.subbrowser.ui.theme.SubBrowserTheme
 
 class MainActivity : ComponentActivity() {
@@ -18,7 +18,7 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             SubBrowserTheme {
-                BrowserWorkspace(controller = browserController)
+                BrowserShellV2(controller = browserController)
             }
         }
     }
