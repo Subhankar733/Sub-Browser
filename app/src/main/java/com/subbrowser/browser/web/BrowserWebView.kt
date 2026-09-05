@@ -1,12 +1,12 @@
 package com.subbrowser.browser.web
 
 import android.graphics.Bitmap
-import android.webkit.WebResourceRequest
-import android.webkit.WebView
 import android.webkit.WebChromeClient
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.webkit.WebSettingsCompat
-import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.subbrowser.browser.BrowserController
 
@@ -34,26 +34,29 @@ fun configureBrowserWebView(
         override fun onReceivedTitle(view: WebView, title: String) {
             controller.onTitleChanged(title)
         }
+
+        override fun onProgressChanged(view: WebView, newProgress: Int) {
+            controller.onProgressChanged(newProgress)
+        }
     }
 
     webView.webViewClient = object : WebViewClient() {
         override fun shouldInterceptRequest(
-                view: WebView,
-                request: WebResourceRequest,
-            ): android.webkit.WebResourceResponse? {
-                if (AdBlockEngine.isAd(request.url.toString())) {
-                    return android.webkit.WebResourceResponse("text/plain", "UTF-8", null)
-                }
-                return super.shouldInterceptRequest(view, request)
+            view: WebView,
+            request: WebResourceRequest,
+        ): WebResourceResponse? {
+            if (AdBlockEngine.isAd(request.url.toString())) {
+                return WebResourceResponse("text/plain", "UTF-8", null)
             }
+            return super.shouldInterceptRequest(view, request)
+        }
 
-            override fun shouldOverrideUrlLoading(
+        override fun shouldOverrideUrlLoading(
             view: WebView,
             request: WebResourceRequest,
         ): Boolean = false
 
         override fun onPageStarted(view: WebView, url: String, favicon: Bitmap?) {
-            controller.attach(webView)
             controller.onNavigationStarted(url)
         }
 
@@ -69,11 +72,7 @@ fun configureBrowserWebView(
             runCatching { view.destroy() }
             return true
         }
-
     }
 
-    webView.setDownloadListener { _, _, _, _, _ ->
-        // Download routing is deliberately kept out of the workspace UI layer.
-        // A dedicated download manager will be added as a separate feature.
-    }
+    webView.setDownloadListener { _, _, _, _, _ -> }
 }
