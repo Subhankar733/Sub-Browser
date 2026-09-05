@@ -37,7 +37,17 @@ fun configureBrowserWebView(
     }
 
     webView.webViewClient = object : WebViewClient() {
-        override fun shouldOverrideUrlLoading(
+        override fun shouldInterceptRequest(
+                view: WebView,
+                request: WebResourceRequest,
+            ): android.webkit.WebResourceResponse? {
+                if (AdBlockEngine.isAd(request.url.toString())) {
+                    return android.webkit.WebResourceResponse("text/plain", "UTF-8", null)
+                }
+                return super.shouldInterceptRequest(view, request)
+            }
+
+            override fun shouldOverrideUrlLoading(
             view: WebView,
             request: WebResourceRequest,
         ): Boolean = false

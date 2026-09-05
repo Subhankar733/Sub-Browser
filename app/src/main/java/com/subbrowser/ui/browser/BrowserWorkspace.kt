@@ -110,7 +110,7 @@ fun BrowserWorkspace(
 
     val submitNavigation: (String) -> Unit = { rawQuery ->
         val trimmed = rawQuery.trim()
-        if (trimmed.isNotEmpty()) {
+        if (trimmed.isNotEmpty() && trimmed != "about:blank") {
             focusManager.clearFocus()
             controller.navigate(trimmed)
         }
@@ -225,7 +225,8 @@ private fun BrowserTopBar(
         modifier = Modifier
             .fillMaxWidth()
             .background(SubSurface)
-            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .windowInsetsPadding(WindowInsets.statusBars)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
     ) {
         Row(
             modifier = Modifier
