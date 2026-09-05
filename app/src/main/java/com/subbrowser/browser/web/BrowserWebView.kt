@@ -74,5 +74,5 @@ fun configureBrowserWebView(
         }
     }
 
-    webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ -> DownloadHandler.enqueue(context, url, userAgent, contentDisposition, mimeType) }
+    webView.setDownloadListener { url, userAgent, contentDisposition, mimeType, _ -> DownloadHandler.enqueue(webView.context, url, userAgent, contentDisposition, mimeType) }
 }

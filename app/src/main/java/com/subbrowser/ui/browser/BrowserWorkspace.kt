@@ -195,7 +195,10 @@ fun BrowserWorkspace(
                 onClose = { menuOpen = false },
                 onNewTab = { controller.openNewTab(); urlText = ""; homeSearchText = ""; menuOpen = false },
                 onPrivateTab = { controller.toggleIncognito(); menuOpen = false },
-                onReload = { controller.reload(); menuOpen = false }
+                onReload = { controller.reload(); menuOpen = false },
+                onBookmarks = { menuOpen = false; controller.toggleBookmarksSheet() },
+                onHistory = { menuOpen = false; controller.toggleHistorySheet() },
+                onSettings = { menuOpen = false; controller.toggleSettingsSheet() }
             )
         }
 

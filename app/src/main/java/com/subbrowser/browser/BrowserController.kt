@@ -247,22 +247,13 @@ class BrowserController {
     }
 
         fun openNewTab(url: String = "about:blank") {
-        session.createTab(url)
+        newTab(url = url)
         currentState = currentState.copy(showTabSwitcher = false)
-        webView?.loadUrl(url)
-        publish()
-    }
-
-    fun closeTab(tabId: Long) {
-        session.closeTab(tabId)
-        val active = session.state.tabs.firstOrNull { it.id == session.state.activeTabId }
-        val targetUrl = active?.url ?: "about:blank"
-        webView?.loadUrl(targetUrl)
         publish()
     }
 
     fun switchTab(tabId: Long) {
-        session.selectTab(tabId)
+        selectTab(tabId)
         currentState = currentState.copy(showTabSwitcher = false)
         val active = session.state.tabs.firstOrNull { it.id == tabId }
         val targetUrl = active?.url ?: "about:blank"
