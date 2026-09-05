@@ -509,7 +509,7 @@ private fun BrowserActionMenu(
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
             )
             ActionMenuItem(icon = Icons.Rounded.Add, title = "New Tab", onClick = onNewTab)
-            ActionMenuItem(icon = "🕶", title = "Private Space", onClick = onPrivateTab)
+            ActionMenuItem(icon = Icons.Rounded.Security, title = "Private Space", onClick = onPrivateTab)
             ActionMenuItem(icon = Icons.Rounded.Refresh, title = "Reload Page", onClick = onReload)
             ActionMenuItem(icon = Icons.Rounded.Bookmarks, title = "Bookmarks", onClick = onBookmarks)
             ActionMenuItem(icon = Icons.Rounded.History, title = "History", onClick = onHistory)
