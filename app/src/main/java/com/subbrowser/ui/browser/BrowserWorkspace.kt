@@ -1,4 +1,7 @@
 package com.subbrowser.ui.browser
+import com.subbrowser.browser.data.BrowserDatabase
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.LaunchedEffect
 
 import android.webkit.WebView
 import androidx.activity.compose.BackHandler
@@ -30,6 +33,9 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -76,6 +82,11 @@ private val defaultShortcuts = listOf(
 fun BrowserWorkspace(
     controller: BrowserController = remember { BrowserController() },
 ) {
+    val context = LocalContext.current
+    val database = remember { BrowserDatabase(context) }
+    LaunchedEffect(Unit) {
+        controller.attachDatabase(database)
+    }
     var state by remember { mutableStateOf(BrowserState()) }
     var menuOpen by remember { mutableStateOf(false) }
     var urlText by remember { mutableStateOf("") }
@@ -164,50 +175,63 @@ fun BrowserWorkspace(
         }
 
         // নিচের নেভিগেশন বার
-        BrowserBottomBar(
-            canGoBack = state.canGoBack,
-            canGoForward = state.canGoForward,
-            tabCount = 1,
-            onBack = {
-                if (state.canGoBack) {
-                    controller.goBack()
-                } else {
-                    controller.navigate("about:blank")
-                    urlText = ""
-                    homeSearchText = ""
-                }
-            },
-            onForward = controller::goForward,
-            onHome = {
-                controller.navigate("about:blank")
-                urlText = ""
-                homeSearchText = ""
-            },
-            onTabs = { menuOpen = true },
-            onMenu = { menuOpen = true }
-        )
-    }
+            BrowserBottomBar(
+                canGoBack = state.canGoBack,
+                canGoForward = state.canGoForward,
+                tabCount = state.session.tabs.size,
+                onBack = {
+                    if (state.canGoBack) controller.goBack()
+                    else { controller.navigate("about:blank"); urlText = ""; homeSearchText = "" }
+                },
+                onForward = controller::goForward,
+                onHome = { controller.navigate("about:blank"); urlText = ""; homeSearchText = "" },
+                onTabs = { controller.toggleTabSwitcher() },
+                onMenu = { menuOpen = !menuOpen }
+            )
+        }
 
-    if (menuOpen) {
-        BrowserActionMenu(
-            onClose = { menuOpen = false },
-            onNewTab = {
-                controller.newTab()
-                urlText = ""
-                homeSearchText = ""
-                menuOpen = false
-            },
-            onPrivateTab = {
-                controller.newTab(isPrivate = true)
-                urlText = ""
-                homeSearchText = ""
-                menuOpen = false
-            },
-            onReload = {
-                controller.reload()
-                menuOpen = false
-            }
-        )
+        if (menuOpen) {
+            BrowserActionMenu(
+                onClose = { menuOpen = false },
+                onNewTab = { controller.openNewTab(); urlText = ""; homeSearchText = ""; menuOpen = false },
+                onPrivateTab = { controller.toggleIncognito(); menuOpen = false },
+                onReload = { controller.reload(); menuOpen = false }
+            )
+        }
+
+        if (state.showTabSwitcher) {
+            TabSwitcherOverlay(
+                state = state,
+                onSelectTab = { controller.switchTab(it) },
+                onCloseTab = { controller.closeTab(it) },
+                onNewTab = { controller.openNewTab() },
+                onClose = { controller.toggleTabSwitcher() }
+            )
+        }
+
+        if (state.showHistorySheet) {
+            HistorySheet(
+                database = database,
+                onSelect = { controller.toggleHistorySheet(); controller.navigate(it) },
+                onClose = { controller.toggleHistorySheet() }
+            )
+        }
+
+        if (state.showBookmarksSheet) {
+            BookmarksSheet(
+                database = database,
+                onSelect = { controller.toggleBookmarksSheet(); controller.navigate(it) },
+                onClose = { controller.toggleBookmarksSheet() }
+            )
+        }
+
+        if (state.showSettingsSheet) {
+            SettingsSheet(
+                currentEngine = state.searchEngine,
+                onSelectEngine = { controller.setSearchEngine(it) },
+                onClose = { controller.toggleSettingsSheet() }
+            )
+        }
     }
 }
 
@@ -453,7 +477,10 @@ private fun BrowserActionMenu(
     onClose: () -> Unit,
     onNewTab: () -> Unit,
     onPrivateTab: () -> Unit,
-    onReload: () -> Unit
+    onReload: () -> Unit,
+    onBookmarks: () -> Unit,
+    onHistory: () -> Unit,
+    onSettings: () -> Unit
 ) {
     Box(
         modifier = Modifier
@@ -479,19 +506,19 @@ private fun BrowserActionMenu(
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
             )
-            ActionMenuItem(icon = "＋", title = "New Tab", onClick = onNewTab)
+            ActionMenuItem(icon = Icons.Rounded.Add, title = "New Tab", onClick = onNewTab)
             ActionMenuItem(icon = "🕶", title = "Private Space", onClick = onPrivateTab)
-            ActionMenuItem(icon = "↻", title = "Reload Page", onClick = onReload)
-            ActionMenuItem(icon = "⭐", title = "Bookmarks", onClick = onClose)
-            ActionMenuItem(icon = "🕒", title = "History", onClick = onClose)
-            ActionMenuItem(icon = "⚙", title = "Settings", onClick = onClose)
+            ActionMenuItem(icon = Icons.Rounded.Refresh, title = "Reload Page", onClick = onReload)
+            ActionMenuItem(icon = Icons.Rounded.Bookmarks, title = "Bookmarks", onClick = onBookmarks)
+            ActionMenuItem(icon = Icons.Rounded.History, title = "History", onClick = onHistory)
+            ActionMenuItem(icon = Icons.Rounded.Settings, title = "Settings", onClick = onSettings)
         }
     }
 }
 
 @Composable
 private fun ActionMenuItem(
-    icon: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
     title: String,
     onClick: () -> Unit
 ) {
@@ -503,7 +530,13 @@ private fun ActionMenuItem(
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(icon, fontSize = 14.sp, modifier = Modifier.width(24.dp))
-        Text(title, color = SubTextPrimary, fontSize = 12.sp)
+        Icon(
+            imageVector = icon,
+            contentDescription = title,
+            tint = SubTextSecondary,
+            modifier = Modifier.size(18.dp)
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(title, color = SubTextPrimary, fontSize = 13.sp)
     }
 }

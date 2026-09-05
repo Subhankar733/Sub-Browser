@@ -3,6 +3,7 @@ package com.subbrowser.browser
 import android.net.Uri
 import android.os.Bundle
 import android.webkit.WebView
+import com.subbrowser.browser.data.BrowserDatabase
 import com.subbrowser.browser.model.BrowserState
 import com.subbrowser.browser.session.SessionController
 import java.net.URLEncoder
@@ -16,6 +17,7 @@ class BrowserController {
     private val session = SessionController()
     private val savedTabStates = mutableMapOf<Long, Bundle>()
     private var webView: WebView? = null
+    private var database: BrowserDatabase? = null
     private var observer: ((BrowserState) -> Unit)? = null
     private var currentState = BrowserState(session = session.state)
 
@@ -161,8 +163,22 @@ class BrowserController {
         update(url = url, loading = true, progress = 15)
     }
 
+    fun attachDatabase(db: BrowserDatabase) {
+        this.database = db
+    }
+
+    fun bookmarkCurrentPage() {
+        val current = currentState
+        if (current.url != "about:blank" && current.url.isNotBlank()) {
+            database?.addBookmark(current.title, current.url)
+        }
+    }
+
     fun onNavigationFinished(url: String, title: String) {
         update(url = url, title = title, loading = false, progress = 100)
+        if (!currentState.isIncognito && url != "about:blank" && url.isNotBlank()) {
+            database?.addHistory(title, url)
+        }
     }
 
     fun onProgressChanged(progress: Int) {
@@ -230,6 +246,65 @@ class BrowserController {
         )
     }
 
+        fun openNewTab(url: String = "about:blank") {
+        session.createTab(url)
+        currentState = currentState.copy(showTabSwitcher = false)
+        webView?.loadUrl(url)
+        publish()
+    }
+
+    fun closeTab(tabId: Long) {
+        session.closeTab(tabId)
+        val active = session.state.tabs.firstOrNull { it.id == session.state.activeTabId }
+        val targetUrl = active?.url ?: "about:blank"
+        webView?.loadUrl(targetUrl)
+        publish()
+    }
+
+    fun switchTab(tabId: Long) {
+        session.selectTab(tabId)
+        currentState = currentState.copy(showTabSwitcher = false)
+        val active = session.state.tabs.firstOrNull { it.id == tabId }
+        val targetUrl = active?.url ?: "about:blank"
+        webView?.loadUrl(targetUrl)
+        publish()
+    }
+
+    fun toggleTabSwitcher() {
+        currentState = currentState.copy(showTabSwitcher = !currentState.showTabSwitcher)
+        publish()
+    }
+
+    fun toggleHistorySheet() {
+        currentState = currentState.copy(showHistorySheet = !currentState.showHistorySheet)
+        publish()
+    }
+
+    fun toggleBookmarksSheet() {
+        currentState = currentState.copy(showBookmarksSheet = !currentState.showBookmarksSheet)
+        publish()
+    }
+
+    fun toggleSettingsSheet() {
+        currentState = currentState.copy(showSettingsSheet = !currentState.showSettingsSheet)
+        publish()
+    }
+
+    fun setSearchEngine(engine: String) {
+        currentState = currentState.copy(searchEngine = engine)
+        publish()
+    }
+
+    fun toggleIncognito() {
+        val next = !currentState.isIncognito
+        currentState = currentState.copy(isIncognito = next)
+        if (next) {
+            webView?.clearCache(true)
+            webView?.clearHistory()
+        }
+        publish()
+    }
+
     private fun normalizeInput(input: String): String? {
         val value = input.trim()
         if (value.isEmpty() || value == "about:blank") return null
@@ -240,7 +315,11 @@ class BrowserController {
             looksLikeHost -> "https://$value"
             else -> {
                 val encoded = URLEncoder.encode(value, StandardCharsets.UTF_8.toString())
-                "https://www.google.com/search?q=$encoded"
+                when (currentState.searchEngine) {
+                    "DuckDuckGo" -> "https://duckduckgo.com/?q=$encoded"
+                    "Bing" -> "https://www.bing.com/search?q=$encoded"
+                    else -> "https://www.google.com/search?q=$encoded"
+                }
             }
         }
     }
