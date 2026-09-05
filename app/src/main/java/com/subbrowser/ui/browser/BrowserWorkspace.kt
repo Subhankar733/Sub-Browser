@@ -143,7 +143,8 @@ fun BrowserWorkspace(
             AndroidView(
                 factory = { context ->
                     WebView(context).also {
-                        configureBrowserWebView(it, controller)
+                        controller.attach(it)
+                            configureBrowserWebView(it, controller)
                     }
                 },
                 modifier = Modifier.fillMaxSize(),

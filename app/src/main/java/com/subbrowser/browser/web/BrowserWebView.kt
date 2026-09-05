@@ -22,8 +22,8 @@ fun configureBrowserWebView(
         setSupportMultipleWindows(false)
         javaScriptCanOpenWindowsAutomatically = false
         allowFileAccess = false
-        allowContentAccess = false
-        mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_NEVER_ALLOW
+        allowContentAccess = true
+        mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
     }
 
     if (WebViewFeature.isFeatureSupported(WebViewFeature.SAFE_BROWSING_ENABLE)) {
