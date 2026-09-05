@@ -33,8 +33,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -79,35 +77,31 @@ fun BrowserWorkspace(
     controller: BrowserController = remember { BrowserController() },
 ) {
     var state by remember { mutableStateOf(BrowserState()) }
-    var webViewEpoch by remember { mutableIntStateOf(0) }
     var menuOpen by remember { mutableStateOf(false) }
     var urlText by remember { mutableStateOf("") }
     var homeSearchText by remember { mutableStateOf("") }
-    var isHomeVisible by remember { mutableStateOf(true) }
     val focusManager = LocalFocusManager.current
 
     DisposableEffect(controller) {
         controller.observe { newState ->
             state = newState
-            if (newState.url.isNotBlank() && newState.url != "about:blank") {
+            if (newState.url != "about:blank" && newState.url.isNotBlank()) {
                 urlText = newState.url
-                isHomeVisible = false
-            } else {
-                isHomeVisible = true
             }
         }
         onDispose { controller.clearObserver() }
     }
 
+    val isHome = state.url.isBlank() || state.url == "about:blank"
+
     BackHandler(enabled = menuOpen) {
         menuOpen = false
     }
 
-    BackHandler(enabled = !menuOpen && (state.canGoBack || !isHomeVisible)) {
+    BackHandler(enabled = !menuOpen && (state.canGoBack || !isHome)) {
         if (state.canGoBack) {
             controller.goBack()
         } else {
-            isHomeVisible = true
             controller.navigate("about:blank")
             urlText = ""
             homeSearchText = ""
@@ -118,16 +112,7 @@ fun BrowserWorkspace(
         val trimmed = rawQuery.trim()
         if (trimmed.isNotEmpty()) {
             focusManager.clearFocus()
-            val target = if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-                trimmed
-            } else if (trimmed.contains(".") && !trimmed.contains(" ")) {
-                "https://$trimmed"
-            } else {
-                "https://www.google.com/search?q=${trimmed.replace(" ", "+")}"
-            }
-            urlText = target
-            isHomeVisible = false
-            controller.navigate(target)
+            controller.navigate(trimmed)
         }
     }
 
@@ -137,9 +122,9 @@ fun BrowserWorkspace(
             .background(SubBlack)
             .windowInsetsPadding(WindowInsets.statusBars)
     ) {
-        // ওপরে স্টিকি প্রফেশনাল অ্যাড্রেস বার
+        // ওপরে অ্যাড্রেস বার
         BrowserTopBar(
-            currentText = urlText,
+            currentText = if (isHome) "" else urlText,
             isLoading = state.loading,
             progress = state.progress,
             onTextChange = { urlText = it },
@@ -149,39 +134,36 @@ fun BrowserWorkspace(
             }
         )
 
-        // ব্রাউজিং এরিয়া
+        // মূল ভিউ
         Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
         ) {
-            key(webViewEpoch) {
-                AndroidView(
-                    factory = { context ->
-                        WebView(context).also {
-                            configureBrowserWebView(it, controller)
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize(),
-                    update = { controller.syncForUi() },
-                    onRelease = { controller.dispose(it) },
-                )
-            }
+            AndroidView(
+                factory = { context ->
+                    WebView(context).also {
+                        configureBrowserWebView(it, controller)
+                    }
+                },
+                modifier = Modifier.fillMaxSize(),
+                update = { controller.syncForUi() },
+                onRelease = { controller.dispose(it) },
+            )
 
-            if (isHomeVisible) {
+            if (isHome) {
                 BrowserHomeScreen(
                     searchQuery = homeSearchText,
                     onSearchChange = { homeSearchText = it },
                     onSearchSubmit = { submitNavigation(homeSearchText) },
                     onShortcutClick = { targetUrl ->
-                        homeSearchText = ""
                         submitNavigation(targetUrl)
                     }
                 )
             }
         }
 
-        // নিচে মোবাইল ব্রাউজার নেভিগেশন বার
+        // নিচের নেভিগেশন বার
         BrowserBottomBar(
             canGoBack = state.canGoBack,
             canGoForward = state.canGoForward,
@@ -190,13 +172,13 @@ fun BrowserWorkspace(
                 if (state.canGoBack) {
                     controller.goBack()
                 } else {
-                    isHomeVisible = true
                     controller.navigate("about:blank")
+                    urlText = ""
+                    homeSearchText = ""
                 }
             },
             onForward = controller::goForward,
             onHome = {
-                isHomeVisible = true
                 controller.navigate("about:blank")
                 urlText = ""
                 homeSearchText = ""
@@ -213,16 +195,12 @@ fun BrowserWorkspace(
                 controller.newTab()
                 urlText = ""
                 homeSearchText = ""
-                isHomeVisible = true
-                webViewEpoch++
                 menuOpen = false
             },
             onPrivateTab = {
                 controller.newTab(isPrivate = true)
                 urlText = ""
                 homeSearchText = ""
-                isHomeVisible = true
-                webViewEpoch++
                 menuOpen = false
             },
             onReload = {
@@ -340,7 +318,6 @@ private fun BrowserHomeScreen(
 
         Spacer(Modifier.height(26.dp))
 
-        // সেন্ট্রাল সার্চ বক্স
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -372,7 +349,6 @@ private fun BrowserHomeScreen(
 
         Spacer(Modifier.height(30.dp))
 
-        // শর্টকাট গ্রিড
         LazyVerticalGrid(
             columns = GridCells.Fixed(4),
             modifier = Modifier.fillMaxWidth(),

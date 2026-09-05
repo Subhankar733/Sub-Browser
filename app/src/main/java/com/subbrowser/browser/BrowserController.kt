@@ -3,9 +3,6 @@ package com.subbrowser.browser
 import android.net.Uri
 import android.os.Bundle
 import android.webkit.WebView
-import androidx.webkit.NavigationParameters
-import androidx.webkit.WebViewCompat
-import androidx.webkit.WebViewFeature
 import com.subbrowser.browser.model.BrowserState
 import com.subbrowser.browser.session.SessionController
 import java.net.URLEncoder
@@ -14,7 +11,6 @@ import java.nio.charset.StandardCharsets
 class BrowserController {
     companion object {
         private const val STATE_KEY = "sub_browser_webview_state"
-        private const val MAX_WEBVIEW_STATE_BYTES = 96 * 1024
     }
 
     private val session = SessionController()
@@ -57,8 +53,8 @@ class BrowserController {
         if (saved != null) {
             view.restoreState(saved)
             savedTabStates.remove(session.state.activeTabId)
-        } else if (active != null && active.url != "about:blank") {
-            navigate(active.url)
+        } else if (active != null && active.url != "about:blank" && active.url.isNotBlank()) {
+            view.loadUrl(active.url)
         }
         sync()
     }
@@ -77,12 +73,7 @@ class BrowserController {
         val view = webView ?: return
         val id = session.state.activeTabId
         val bundle = Bundle()
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.SAVE_STATE)) {
-            WebViewCompat.saveState(view, bundle, MAX_WEBVIEW_STATE_BYTES, false)
-        } else {
-            @Suppress("DEPRECATION")
-            view.saveState(bundle)
-        }
+        view.saveState(bundle)
         savedTabStates[id] = bundle
         session.updateTab(
             id = id,
@@ -102,18 +93,15 @@ class BrowserController {
         session.saveMetadata(outState)
         val view = webView ?: return
         val webState = Bundle()
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.SAVE_STATE)) {
-            WebViewCompat.saveState(view, webState, MAX_WEBVIEW_STATE_BYTES, false)
-        } else {
-            @Suppress("DEPRECATION")
-            view.saveState(webState)
-        }
+        view.saveState(webState)
         outState.putBundle(STATE_KEY, webState)
     }
 
     fun newTab(isPrivate: Boolean = false) {
         saveActiveTabState()
         session.newTab(isPrivate)
+        currentState = currentState.copy(url = "about:blank", title = "New Tab", loading = false, progress = 0)
+        webView?.loadUrl("about:blank")
         publish()
     }
 
@@ -134,12 +122,9 @@ class BrowserController {
 
     fun navigate(input: String) {
         val target = normalizeInput(input) ?: return
-        val view = webView ?: return
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.WEBVIEW_NAVIGATE_EXPERIMENTAL_V1)) {
-            navigateWithCompat(view, target)
-        } else {
-            view.loadUrl(target)
-        }
+        currentState = currentState.copy(url = target, loading = true, progress = 10)
+        publish()
+        webView?.loadUrl(target)
     }
 
     fun goBack() {
@@ -173,7 +158,7 @@ class BrowserController {
     }
 
     fun onNavigationStarted(url: String) {
-        update(url = url, loading = true, progress = 0)
+        update(url = url, loading = true, progress = 15)
     }
 
     fun onNavigationFinished(url: String, title: String) {
@@ -213,6 +198,7 @@ class BrowserController {
         val resolvedTitle = title ?: view?.title.orEmpty().ifBlank { currentState.title }
         val back = canGoBack ?: view?.canGoBack() ?: currentState.canGoBack
         val forward = canGoForward ?: view?.canGoForward() ?: currentState.canGoForward
+
         currentState = currentState.copy(
             url = resolvedUrl,
             title = resolvedTitle,
@@ -242,11 +228,6 @@ class BrowserController {
             canGoBack = view.canGoBack(),
             canGoForward = view.canGoForward(),
         )
-    }
-
-    @androidx.webkit.WebViewCompat.ExperimentalNavigate
-    private fun navigateWithCompat(view: WebView, url: String) {
-        WebViewCompat.navigate(view, url, NavigationParameters.Builder().build())
     }
 
     private fun normalizeInput(input: String): String? {
