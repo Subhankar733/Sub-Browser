@@ -31,7 +31,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.import androidx.compose.runtime.getValue
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -84,10 +85,8 @@ fun BrowserWorkspace(
     DisposableEffect(controller) {
         controller.observe { newState ->
             state = newState
-            if (newState.url != "about:blank" && newState.url.isNotBlank() && !state.loading) {
-                if (urlText != newState.url) {
-                    urlText = newState.url
-                }
+            if (newState.url.isNotBlank() && newState.url != "about:blank") {
+                urlText = newState.url
             }
         }
         onDispose { controller.clearObserver() }
@@ -121,9 +120,8 @@ fun BrowserWorkspace(
         modifier = Modifier
             .fillMaxSize()
             .background(SubBlack)
-            
     ) {
-        // ওপরে অ্যাড্রেস বার
+        // ওপরে স্ট্যাটাস বার প্যাডিং সহ ফিক্সড সার্চ বার
         BrowserTopBar(
             currentText = if (isHome) "" else urlText,
             isLoading = state.loading,
@@ -145,12 +143,12 @@ fun BrowserWorkspace(
                 factory = { context ->
                     WebView(context).also {
                         controller.attach(it)
-                            configureBrowserWebView(it, controller)
+                        configureBrowserWebView(it, controller)
                     }
                 },
                 modifier = Modifier.fillMaxSize(),
                 update = { },
-                onRelease = { controller.dispose(it) },
+                onRelease = { controller.dispose(it) }
             )
 
             if (isHome) {
@@ -232,10 +230,10 @@ private fun BrowserTopBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(44.dp)
-                .clip(RoundedCornerShape(22.dp))
+                .height(46.dp)
+                .clip(RoundedCornerShape(23.dp))
                 .background(CardBg)
-                .border(1.dp, BorderColor, RoundedCornerShape(22.dp))
+                .border(1.dp, BorderColor, RoundedCornerShape(23.dp))
                 .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
