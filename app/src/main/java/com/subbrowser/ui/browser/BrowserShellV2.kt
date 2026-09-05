@@ -103,6 +103,7 @@ fun BrowserShellV2(controller: BrowserController) {
                 AndroidView(
                     factory = { ctx ->
                         WebView(ctx).also { view ->
+                            view.setBackgroundColor(android.graphics.Color.TRANSPARENT)
                             controller.attach(view)
                             configureBrowserWebView(view, controller)
                         }
@@ -314,10 +315,13 @@ private fun BrowserNewTabPage(
     )
 
     Column(
-        Modifier.fillMaxSize().padding(horizontal = 24.dp),
+        Modifier
+            .fillMaxSize()
+            .background(SubBlack)
+            .padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(Modifier.height(54.dp))
+        Spacer(Modifier.height(38.dp))
         Box(
             Modifier.size(70.dp).clip(CircleShape).background(ShellCard)
                 .border(2.dp, Accent, CircleShape),
