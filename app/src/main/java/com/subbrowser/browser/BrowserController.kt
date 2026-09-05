@@ -232,6 +232,8 @@ class BrowserController {
 
     private fun normalizeInput(input: String): String? {
         val value = input.trim()
+        if (value.isEmpty() || value == "about:blank") return null
+        val value = input.trim()
         if (value.isEmpty()) return null
         val hasScheme = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*://").containsMatchIn(value)
         val looksLikeHost = value.contains('.') && !value.contains(' ')
