@@ -247,7 +247,10 @@ class BrowserController {
     }
 
         fun openNewTab(url: String = "about:blank") {
-        newTab(url = url)
+        newTab()
+        if (url != "about:blank") {
+            navigate(url)
+        }
         currentState = currentState.copy(showTabSwitcher = false)
         publish()
     }

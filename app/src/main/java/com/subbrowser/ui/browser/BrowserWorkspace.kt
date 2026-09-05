@@ -236,7 +236,6 @@ fun BrowserWorkspace(
             )
         }
     }
-}
 
 @Composable
 private fun BrowserTopBar(
