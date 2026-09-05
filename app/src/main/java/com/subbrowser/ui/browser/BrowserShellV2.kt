@@ -158,7 +158,9 @@ fun BrowserShellV2(controller: BrowserController) {
                     menuOpen = false
                 },
                 onPrivateTab = {
-                    controller.toggleIncognito()
+                    controller.openNewTab(isPrivate = true)
+                    address = ""
+                    homeQuery = ""
                     menuOpen = false
                 },
                 onBookmark = {
@@ -215,7 +217,10 @@ fun BrowserShellV2(controller: BrowserController) {
         if (state.showSettingsSheet) {
             SettingsSheet(
                 currentEngine = state.searchEngine,
-                onSelectEngine = controller::setSearchEngine,
+                onSelectEngine = {
+                    controller.setSearchEngine(it)
+                    controller.toggleSettingsSheet()
+                },
                 onClose = controller::toggleSettingsSheet
             )
         }

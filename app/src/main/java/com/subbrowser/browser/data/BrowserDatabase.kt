@@ -8,7 +8,7 @@ import android.database.sqlite.SQLiteOpenHelper
 data class HistoryItem(val id: Long, val title: String, val url: String, val timestamp: Long)
 data class BookmarkItem(val id: Long, val title: String, val url: String)
 
-class BrowserDatabase(context: Context) : SQLiteOpenHelper(context, "sub_browser.db", null, 1) {
+class BrowserDatabase(context: Context) : SQLiteOpenHelper(context, "sub_browser.db", null, 2) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -33,18 +33,28 @@ class BrowserDatabase(context: Context) : SQLiteOpenHelper(context, "sub_browser
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        db.execSQL("DROP TABLE IF EXISTS history")
-        db.execSQL("DROP TABLE IF EXISTS bookmarks")
-        onCreate(db)
+        if (oldVersion < 2) {
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS idx_history_url_timestamp " +
+                    "ON history(url, timestamp)"
+            )
+        }
     }
 
     fun addHistory(title: String, url: String) {
         if (url == "about:blank" || url.isBlank()) return
         val db = writableDatabase
+        val now = System.currentTimeMillis()
+        db.rawQuery(
+            "SELECT timestamp FROM history WHERE url = ? ORDER BY timestamp DESC LIMIT 1",
+            arrayOf(url)
+        ).use { cursor ->
+            if (cursor.moveToFirst() && now - cursor.getLong(0) < 2000L) return
+        }
         val values = ContentValues().apply {
             put("title", title.ifBlank { url })
             put("url", url)
-            put("timestamp", System.currentTimeMillis())
+            put("timestamp", now)
         }
         db.insert("history", null, values)
     }

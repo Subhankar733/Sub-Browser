@@ -33,6 +33,7 @@ class BrowserController {
                     progress = active.progress,
                     canGoBack = active.canGoBack,
                     canGoForward = active.canGoForward,
+                    isIncognito = active.isPrivate,
                 )
             }
             publish()
@@ -102,7 +103,13 @@ class BrowserController {
     fun newTab(isPrivate: Boolean = false) {
         saveActiveTabState()
         session.newTab(isPrivate)
-        currentState = currentState.copy(url = "about:blank", title = "New Tab", loading = false, progress = 0)
+        currentState = currentState.copy(
+            url = "about:blank",
+            title = "New Tab",
+            loading = false,
+            progress = 0,
+            isIncognito = isPrivate,
+        )
         webView?.loadUrl("about:blank")
         publish()
     }
@@ -117,8 +124,20 @@ class BrowserController {
     fun closeTab(id: Long) {
         val wasActive = id == session.state.activeTabId
         if (wasActive) saveActiveTabState()
-        session.closeTab(id) ?: return
-        if (wasActive) webView = null
+        val nextActiveId = session.closeTab(id) ?: return
+        if (wasActive) {
+            val nextTab = session.state.tabs.firstOrNull { it.id == nextActiveId }
+            currentState = currentState.copy(
+                url = nextTab?.url ?: "about:blank",
+                title = nextTab?.title ?: "New Tab",
+                loading = nextTab?.loading ?: false,
+                progress = nextTab?.progress ?: 0,
+                canGoBack = nextTab?.canGoBack ?: false,
+                canGoForward = nextTab?.canGoForward ?: false,
+                isIncognito = nextTab?.isPrivate == true,
+            )
+            webView?.loadUrl(nextTab?.url ?: "about:blank")
+        }
         publish()
     }
 
@@ -176,7 +195,10 @@ class BrowserController {
 
     fun onNavigationFinished(url: String, title: String) {
         update(url = url, title = title, loading = false, progress = 100)
-        if (!currentState.isIncognito && url != "about:blank" && url.isNotBlank()) {
+        val activePrivate = session.state.tabs
+            .firstOrNull { it.id == session.state.activeTabId }
+            ?.isPrivate == true
+        if (!activePrivate && url != "about:blank" && url.isNotBlank()) {
             database?.addHistory(title, url)
         }
     }
@@ -215,6 +237,10 @@ class BrowserController {
         val back = canGoBack ?: view?.canGoBack() ?: currentState.canGoBack
         val forward = canGoForward ?: view?.canGoForward() ?: currentState.canGoForward
 
+        val activePrivate = session.state.tabs
+            .firstOrNull { it.id == activeId }
+            ?.isPrivate == true
+
         currentState = currentState.copy(
             url = resolvedUrl,
             title = resolvedTitle,
@@ -223,6 +249,7 @@ class BrowserController {
             canGoBack = back,
             canGoForward = forward,
             secureConnection = Uri.parse(resolvedUrl).scheme.equals("https", ignoreCase = true),
+            isIncognito = activePrivate,
         )
         session.updateTab(
             id = activeId,
@@ -246,8 +273,11 @@ class BrowserController {
         )
     }
 
-        fun openNewTab(url: String = "about:blank") {
-        newTab()
+    fun openNewTab(
+        url: String = "about:blank",
+        isPrivate: Boolean = false,
+    ) {
+        newTab(isPrivate)
         if (url != "about:blank") {
             navigate(url)
         }
